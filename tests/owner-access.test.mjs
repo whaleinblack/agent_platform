@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp, mkdir, rm, readFile, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {Coordinator} from '../lib/coordinator.mjs';
+import {createHttpServer} from '../lib/http-server.mjs';
+import {OwnerAccess} from '../lib/owner-access.mjs';
+
+test('owner entry tickets are single-use, short-lived; browser API tokens require their signed cookie', () => {
+  let now = 1000000;const access = new OwnerAccess(() => 'a'.repeat(64), () => now),ticket = access.issueTicket(),session = access.redeem(ticket.ticket);
+  assert.ok(session);assert.equal(access.redeem(ticket.ticket), null);
+  const headers = {cookie: session.setCookie.split(';')[0]};assert.equal(access.canBootstrap('', headers), true);assert.equal(access.resolveToken(session.token, headers), 'a'.repeat(64));
+  assert.equal(access.canBootstrap('', {}), false);assert.equal(access.resolveToken(session.token, {}), session.token);assert.equal(access.canBootstrap('é'.repeat(64), {}), false);
+  assert.match(session.setCookie, /HttpOnly/);assert.match(session.setCookie, /SameSite=Strict/);
+  const expired = access.issueTicket();now += 61000;assert.equal(access.redeem(expired.ticket), null);
+  assert.equal(new OwnerAccess(() => 'a'.repeat(64), () => now).canBootstrap('', headers), true);
+  now += 8 * 86400000;assert.equal(access.canBootstrap('', headers), false);
+});
+test('anonymous and agent bootstrap cannot read owner credentials; authenticated UI can administer projects', async t => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'agent-owner-')),root = path.join(directory, 'project');await mkdir(root);
+  const data = path.join(directory, 'state');await mkdir(data);const oldToken = 'b'.repeat(64);await writeFile(path.join(data, 'owner.json'), JSON.stringify({token: oldToken}));
+  const coordinator = await new Coordinator(data).init();assert.notEqual(coordinator.ownerToken, oldToken);
+  const server = createHttpServer(coordinator, path.resolve(import.meta.dirname, '../public'), {port: 0});await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {await new Promise(resolve => {server.close(resolve);server.closeAllConnections();});await rm(directory, {recursive: true,force: true});});
+  const base = 'http://127.0.0.1:' + server.address().port,post = (route, body, headers = {}) => fetch(base + route, {method: 'POST',headers: {'Content-Type': 'application/json',...headers},body: JSON.stringify(body)});
+  const anonymous = await fetch(base + '/api/bootstrap');assert.equal(anonymous.status, 401);assert.equal((await anonymous.json()).token, undefined);
+  assert.equal((await post('/api/owner/ticket', {})).status, 403);
+  assert.equal((await post('/api/projects', {name: 'Unauthorized',root}, {Authorization: 'Bearer ' + oldToken})).status, 403);
+  const ticket = await post('/api/owner/ticket', {}, {Authorization: 'Bearer ' + coordinator.ownerToken}).then(r => r.json());
+  const response = await post('/api/owner/session', {ticket: ticket.ticket}),cookie = response.headers.get('set-cookie').split(';')[0],owner = await response.json();
+  assert.notEqual(owner.token, coordinator.ownerToken);assert.equal((await post('/api/owner/session', {ticket: ticket.ticket})).status, 401);
+  const headers = {Cookie: cookie,Authorization: 'Bearer ' + owner.token};assert.equal((await fetch(base + '/api/bootstrap', {headers: {Cookie: cookie}})).status, 200);
+  const projectResponse = await post('/api/projects', {name: 'Owner project',root}, headers);assert.equal(projectResponse.status, 201);const project = (await projectResponse.json()).project;
+  const agent = await post('/api/agents/join', {projectId: project.id,agentId: 'agent-auth-test',task: 'Verify agent access',files: []}).then(r => r.json());
+  assert.equal((await fetch(base + '/api/bootstrap', {headers: {Authorization: 'Bearer ' + agent.session.token}})).status, 401);
+  assert.equal((await fetch(base + '/api/projects/' + project.id, {headers: {Authorization: 'Bearer ' + agent.session.token}})).status, 200);
+  assert.equal((await post('/api/projects', {name: 'Agent cannot administer',root}, {Authorization: 'Bearer ' + agent.session.token})).status, 403);
+  assert.equal(JSON.parse(await readFile(path.join(data, 'owner.json'), 'utf8')).ownerAccessVersion, 2);
+});

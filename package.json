@@ -1,0 +1,15 @@
+{
+  "name": "local-agent-coordinator",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Local coordination for coding agents, with claims, messages and HTML roadmaps.",
+  "repository": {"type": "git", "url": "https://github.com/whaleinblack/agent_platform.git"},
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {"node": ">=22"},
+  "devDependencies": {"playwright": "1.58.2"}
+}

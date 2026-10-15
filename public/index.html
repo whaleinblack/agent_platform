@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Agent 协调台</title>
+  <script src="/app.js?theme-bootstrap=1" data-theme-bootstrap></script>
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="/icons.js"></script>
+  <script defer src="/roadmap.js"></script>
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳转到工作区</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="项目导航">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><i data-lucide="network"></i></span><div><strong>Agent 协调台</strong><span>本地工作区</span></div></div>
+      <div class="sidebar-heading"><h2>项目 <span id="project-count" class="count">0</span></h2><button type="button" class="icon-button" data-action="open-project" aria-label="新增项目" title="新增项目"><i data-lucide="plus"></i></button></div>
+      <div class="search-wrap sidebar-search"><i data-lucide="search" aria-hidden="true"></i><input id="project-search" type="search" aria-label="搜索项目" placeholder="搜索项目" autocomplete="off"></div>
+      <nav id="project-list" class="project-list" aria-label="项目列表" aria-busy="true"></nav>
+      <p id="project-empty" class="sidebar-empty" role="status">正在加载项目…</p>
+      <div class="sidebar-footer"><span class="connection-dot" id="connection-dot"></span><span id="connection-text" role="status">正在连接</span><button id="refresh-button" type="button" class="icon-button" data-action="refresh" aria-label="刷新数据" title="刷新数据"><i data-lucide="refresh-cw"></i></button></div>
+    </aside>
+
+    <main id="main" tabindex="-1">
+      <header class="workspace-header">
+        <div class="project-heading"><p class="eyebrow">项目工作区</p><h1 id="project-title">选择项目</h1><p id="project-root" class="project-root"></p><p id="project-description" class="project-description" hidden></p></div>
+        <div class="header-actions"><div class="sync-meta"><span id="last-sync">尚未同步</span><span id="project-settings"></span></div><button id="policy-button" type="button" class="secondary-button" data-action="install-policy" hidden><i data-lucide="file-check" aria-hidden="true"></i><span>接入规则</span></button><label class="theme-control" title="主题"><span id="theme-icon" aria-hidden="true"><i data-lucide="sun-moon"></i></span><span class="sr-only">主题</span><select id="theme-select" aria-label="主题"><option value="dark">深色</option><option value="light">浅色</option><option value="system">跟随系统</option></select></label>
+          <label class="theme-control language-control" title="语言"><i data-lucide="languages" aria-hidden="true"></i><select id="language-select" aria-label="语言"><option value="zh">中文</option><option value="ja">日本語</option><option value="en">English</option></select></label></div>
+      </header>
+      <section id="owner-sign-in" class="notice owner-notice" aria-labelledby="owner-sign-in-title" role="status" hidden><i data-lucide="key-round" aria-hidden="true"></i><div><h2 id="owner-sign-in-title">需要管理员登录</h2><p>无需输入密码。双击本机 Start-Agent-Coordinator.cmd 即可恢复管理员登录；Windows 登录时也会自动打开已授权的管理页。</p><p id="owner-sign-in-error" hidden></p></div></section>
+      <p id="policy-feedback" class="policy-feedback" role="status" aria-live="polite" hidden></p>
+      <div id="sync-error" class="notice error-notice" role="alert" hidden><i data-lucide="wifi-off" aria-hidden="true"></i><span id="sync-error-text"></span><button type="button" class="icon-button" data-action="refresh" aria-label="重新连接" title="重新连接"><i data-lucide="refresh-cw"></i></button></div>
+      <section id="welcome" class="workspace-empty" aria-labelledby="welcome-title">
+        <i data-lucide="folder-open" aria-hidden="true"></i><h2 id="welcome-title">正在连接工作区</h2><p id="welcome-text">正在获取项目数据…</p><button type="button" class="primary-button" data-action="open-project"><i data-lucide="plus" aria-hidden="true"></i>新增项目</button>
+      </section>
+      <div id="project-workspace" hidden>
+        <div class="stats-strip" aria-label="项目会话概览">
+          <div><span class="stat-label"><span class="status-dot working"></span>工作中</span><strong id="stat-working">0</strong></div>
+          <div><span class="stat-label"><span class="status-dot waiting"></span>等待中</span><strong id="stat-waiting">0</strong></div>
+          <div><span class="stat-label"><i data-lucide="file-warning" aria-hidden="true"></i>文件冲突</span><strong id="stat-conflicts">0</strong></div>
+          <div><span class="stat-label"><i data-lucide="history" aria-hidden="true"></i>全部会话</span><strong id="stat-total">0</strong></div>
+        </div>
+        <div class="workspace-grid">
+          <div class="primary-pane">
+            <div class="tabs" role="tablist" aria-label="项目内容">
+              <button id="tab-agents" type="button" role="tab" aria-selected="true" aria-controls="panel-agents" data-tab="agents"><i data-lucide="users" aria-hidden="true"></i>会话 <span id="agents-count" class="count">0</span></button>
+              <button id="tab-board" type="button" role="tab" aria-selected="false" aria-controls="panel-board" data-tab="board" tabindex="-1"><i data-lucide="pin" aria-hidden="true"></i>公告板 <span id="notes-count" class="count">0</span></button>
+              <button id="tab-roadmap" type="button" role="tab" aria-selected="false" aria-controls="panel-roadmap" data-tab="roadmap" tabindex="-1"><i data-lucide="map" aria-hidden="true"></i>路线图</button>
+              <button id="tab-messages" type="button" role="tab" aria-selected="false" aria-controls="panel-messages" data-tab="messages" tabindex="-1"><i data-lucide="messages-square" aria-hidden="true"></i>消息 <span id="messages-count" class="count">0</span></button>
+              <button id="tab-events" type="button" role="tab" aria-selected="false" aria-controls="panel-events" data-tab="events" tabindex="-1"><i data-lucide="activity" aria-hidden="true"></i>活动</button>
+            </div>
+
+            <section id="panel-agents" class="tab-panel" role="tabpanel" aria-labelledby="tab-agents" tabindex="0">
+              <div class="section-toolbar"><div class="search-wrap"><i data-lucide="search" aria-hidden="true"></i><input id="agent-search" type="search" aria-label="搜索会话" placeholder="搜索 Agent、任务或文件" autocomplete="off"></div><label class="switch-label"><input id="show-history" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span>包含历史</label></div>
+              <div id="agent-table-wrap" class="table-wrap" aria-busy="true">
+                <table class="agent-table"><caption class="sr-only">项目 Agent 会话</caption><thead><tr><th scope="col">Agent / 任务</th><th scope="col">状态</th><th scope="col">进度</th><th scope="col">文件</th><th scope="col">心跳 / 租约</th><th scope="col"><span class="sr-only">操作</span></th></tr></thead><tbody id="agent-rows"></tbody></table>
+              </div>
+              <p id="agent-empty" class="empty-state" role="status">正在加载会话…</p>
+              <section id="session-detail" class="session-detail" aria-label="会话详情" hidden></section>
+            </section>
+
+            <section id="panel-board" class="tab-panel" role="tabpanel" aria-labelledby="tab-board" tabindex="0" hidden>
+              <div class="section-toolbar"><div class="search-wrap"><i data-lucide="search" aria-hidden="true"></i><input id="note-search" type="search" aria-label="搜索公告" placeholder="搜索公告、标签或作者" autocomplete="off"></div><button type="button" class="primary-button compact" data-action="open-note"><i data-lucide="plus" aria-hidden="true"></i>发布公告</button></div>
+              <p class="note-week-help">按周归档 · 周一至周日（日本时间）</p>
+              <div id="note-list" class="note-list"></div><p id="note-empty" class="empty-state" role="status">暂无公告</p>
+            </section>
+
+            <section id="panel-roadmap" class="tab-panel" role="tabpanel" aria-labelledby="tab-roadmap" tabindex="0" hidden></section>
+
+            <section id="panel-messages" class="tab-panel" role="tabpanel" aria-labelledby="tab-messages" tabindex="0" hidden>
+              <div class="section-toolbar"><div class="search-wrap"><i data-lucide="search" aria-hidden="true"></i><input id="message-search" type="search" aria-label="搜索消息" placeholder="搜索消息或 Agent ID" autocomplete="off"></div><label class="select-filter"><span class="sr-only">消息类型</span><select id="message-filter"><option value="all">全部类型</option><option value="message">消息</option><option value="schedule">调度</option></select></label></div>
+              <div id="message-list" class="message-list"></div><p id="message-empty" class="empty-state" role="status">暂无消息</p>
+            </section>
+
+            <section id="panel-events" class="tab-panel" role="tabpanel" aria-labelledby="tab-events" tabindex="0" hidden>
+              <div class="section-toolbar"><h2>活动记录</h2><div class="search-wrap"><i data-lucide="search" aria-hidden="true"></i><input id="event-search" type="search" aria-label="搜索活动" placeholder="搜索事件" autocomplete="off"></div></div>
+              <ol id="event-list" class="event-list"></ol><p id="event-empty" class="empty-state" role="status">暂无活动</p>
+            </section>
+          </div>
+
+          <aside class="message-pane" aria-labelledby="compose-title">
+            <div class="pane-heading"><i data-lucide="send" aria-hidden="true"></i><h2 id="compose-title">发送消息</h2></div>
+            <form id="message-form">
+              <fieldset id="message-fields"><legend class="sr-only">消息内容</legend>
+                <label for="message-recipient">收件人</label><input id="message-recipient" name="toAgentId" list="recipient-options" value="*" required autocomplete="off" placeholder="Agent ID 或 *" aria-label="收件人 Agent ID，星号为广播"><datalist id="recipient-options"></datalist>
+                <div class="radio-segment" role="group" aria-label="消息类型"><label><input type="radio" name="kind" value="message" checked><span><i data-lucide="message-square" aria-hidden="true"></i>消息</span></label><label><input type="radio" name="kind" value="schedule"><span><i data-lucide="list-checks" aria-hidden="true"></i>调度</span></label></div>
+                <label for="message-text">内容</label><textarea id="message-text" name="text" rows="7" required placeholder="消息内容"></textarea>
+                <button id="send-button" type="submit" class="primary-button full"><i data-lucide="send" aria-hidden="true"></i><span>发送</span></button>
+              </fieldset>
+              <p id="message-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+            </form>
+            <div class="pane-heading latest-heading"><h2>最近消息</h2><span id="recent-count" class="count">0</span></div>
+            <div id="recent-messages" class="recent-messages"></div><p id="recent-empty" class="subtle-empty">暂无消息</p>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="project-dialog" aria-labelledby="project-dialog-title">
+    <form id="project-form">
+      <div class="dialog-heading"><h2 id="project-dialog-title">新增项目</h2><button type="button" class="icon-button" data-action="close-project" aria-label="关闭新增项目" title="关闭"><i data-lucide="x"></i></button></div>
+      <fieldset id="project-fields"><legend class="sr-only">项目设置</legend>
+        <label for="new-project-name">项目名称</label><input id="new-project-name" name="name" required maxlength="100" autocomplete="off" placeholder="项目名称">
+        <label for="new-project-root">根目录</label><input id="new-project-root" name="root" required autocomplete="off" spellcheck="false" placeholder="C:/workspace/project">
+        <label for="new-project-description">描述 <span class="optional">可选</span></label><textarea id="new-project-description" name="description" rows="3" maxlength="2000" placeholder="项目描述"></textarea>
+        <div class="form-columns"><div><label for="new-project-lease">心跳失联超时 <span class="unit">秒</span></label><input id="new-project-lease" name="leaseSeconds" type="number" min="15" max="300" step="1" value="45" required></div><div><label for="new-project-idle">空闲退出 <span class="unit">分钟</span></label><input id="new-project-idle" name="idleMinutes" type="number" min="1" max="60" step="1" value="5" required></div></div>
+        <label class="checkbox-label" for="new-project-policy"><input id="new-project-policy" name="installPolicy" type="checkbox" checked><span>写入项目 agent 接入规则（保留现有 AGENTS.md）</span></label>
+      </fieldset>
+      <p id="project-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-action="close-project">取消</button><button id="create-project-button" type="submit" class="primary-button"><i data-lucide="plus" aria-hidden="true"></i><span>创建项目</span></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="note-dialog" aria-labelledby="note-dialog-title">
+    <form id="note-form">
+      <div class="dialog-heading"><div><h2 id="note-dialog-title">发布公告</h2><p id="note-project-name" class="dialog-context"></p></div><button type="button" class="icon-button" data-action="close-note" aria-label="关闭发布公告" title="关闭"><i data-lucide="x"></i></button></div>
+      <fieldset id="note-fields"><legend class="sr-only">公告内容</legend>
+        <label for="note-title">标题</label><input id="note-title" name="title" required maxlength="200" autocomplete="off" placeholder="公告标题">
+        <label for="note-text">内容</label><textarea id="note-text" name="text" rows="8" required maxlength="16000" placeholder="公告内容"></textarea>
+        <label for="note-tags">标签 <span class="optional">可选</span></label><input id="note-tags" name="tags" autocomplete="off" placeholder="协作, 约定">
+      </fieldset>
+      <p id="note-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-action="close-note">取消</button><button id="publish-note-button" type="submit" class="primary-button"><i data-lucide="pin" aria-hidden="true"></i><span>发布</span></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="cancel-dialog" aria-labelledby="cancel-dialog-title">
+    <form id="cancel-form">
+      <div class="dialog-heading"><h2 id="cancel-dialog-title">终止会话</h2><button type="button" class="icon-button" data-action="close-cancel" aria-label="关闭终止会话" title="关闭"><i data-lucide="x"></i></button></div>
+      <p id="cancel-target" class="cancel-target"></p><p>确认将此会话标记为已取消？</p>
+      <fieldset id="cancel-fields"><legend class="sr-only">终止原因</legend><label for="cancel-summary">说明 <span class="optional">可选</span></label><textarea id="cancel-summary" name="summary" rows="3" placeholder="终止原因或交接说明"></textarea></fieldset>
+      <p id="cancel-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-action="close-cancel">保留会话</button><button id="confirm-cancel-button" type="submit" class="danger-button"><i data-lucide="square" aria-hidden="true"></i><span>确认终止</span></button></div>
+    </form>
+  </dialog>
+  <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
+  <noscript><p class="notice error-notice">需要启用 JavaScript 才能连接协调台。</p></noscript>
+  <script id="i18n-catalog" type="application/json">
+  {
+    "Agent 协调台": ["Agent 連携ツール", "Agent Coordinator"],
+    "跳转到工作区": ["ワークスペースへ移動", "Skip to workspace"],
+    "项目导航": ["プロジェクトナビゲーション", "Project navigation"],
+    "本地工作区": ["ローカルワークスペース", "Local workspace"],
+    "项目": ["プロジェクト", "Projects"],
+    "新增项目": ["プロジェクトを追加", "Add project"],
+    "搜索项目": ["プロジェクトを検索", "Search projects"],
+    "项目列表": ["プロジェクト一覧", "Project list"],
+    "正在加载项目…": ["プロジェクトを読み込み中…", "Loading projects…"],
+    "正在连接": ["接続中", "Connecting"],
+    "刷新数据": ["データを更新", "Refresh data"],
+    "项目工作区": ["プロジェクトのワークスペース", "Project workspace"],
+    "选择项目": ["プロジェクトを選択", "Select a project"],
+    "尚未同步": ["未同期", "Not synced yet"],
+    "接入规则": ["参加ルール", "Agent rules"],
+    "主题": ["テーマ", "Theme"],
+    "深色": ["ダーク", "Dark"],
+    "浅色": ["ライト", "Light"],
+    "跟随系统": ["システム設定", "System"],
+    "语言": ["言語", "Language"],
+    "需要管理员登录": ["管理者としてのログインが必要です", "Administrator sign-in required"],
+    "无需输入密码。双击本机 Start-Agent-Coordinator.cmd 即可恢复管理员登录；Windows 登录时也会自动打开已授权的管理页。": ["パスワードの入力は不要です。この PC の Start-Agent-Coordinator.cmd をダブルクリックすると、管理者としてログインできます。Windows へのログイン時にも、認証済みの管理画面が自動的に開きます。", "No password is needed. Double-click Start-Agent-Coordinator.cmd on this PC to sign in as administrator. An authorized management page also opens automatically when you sign in to Windows."],
+    "重新连接": ["再接続", "Reconnect"],
+    "正在连接工作区": ["ワークスペースに接続中", "Connecting to workspace"],
+    "正在获取项目数据…": ["プロジェクトのデータを取得中…", "Fetching project data…"],
+    "项目会话概览": ["プロジェクトのセッション概要", "Project session overview"],
+    "工作中": ["作業中", "Working"],
+    "等待中": ["待機中", "Waiting"],
+    "文件冲突": ["ファイルの競合", "File conflicts"],
+    "全部会话": ["全セッション", "All sessions"],
+    "项目内容": ["プロジェクトの内容", "Project content"],
+    "会话": ["セッション", "Sessions"],
+    "公告板": ["掲示板", "Board"],
+    "消息": ["メッセージ", "Messages"],
+    "活动": ["履歴", "Activity"],
+    "搜索会话": ["セッションを検索", "Search sessions"],
+    "搜索 Agent、任务或文件": ["Agent・タスク・ファイルを検索", "Search agents, tasks or files"],
+    "包含历史": ["終了済みも表示", "Include history"],
+    "项目 Agent 会话": ["プロジェクトの Agent セッション", "Project agent sessions"],
+    "Agent / 任务": ["Agent / タスク", "Agent / task"],
+    "状态": ["状態", "Status"],
+    "进度": ["進捗", "Progress"],
+    "文件": ["ファイル", "Files"],
+    "心跳 / 租约": ["ハートビート / 有効期限", "Heartbeat / lease"],
+    "操作": ["操作", "Actions"],
+    "正在加载会话…": ["セッションを読み込み中…", "Loading sessions…"],
+    "会话详情": ["セッションの詳細", "Session details"],
+    "搜索公告": ["投稿を検索", "Search posts"],
+    "搜索公告、标签或作者": ["投稿・タグ・投稿者を検索", "Search posts, tags or authors"],
+    "发布公告": ["掲示板に投稿", "Post to board"],
+    "暂无公告": ["投稿はありません", "No posts yet"],
+    "按周归档 · 周一至周日（日本时间）": ["週別フォルダー · 月曜〜日曜（日本時間）", "Weekly folders · Monday–Sunday (Japan time)"],
+    "日期未知": ["日付不明", "Unknown date"],
+    "{n} 条公告": ["{n} 件", "{n} posts"],
+    "搜索消息": ["メッセージを検索", "Search messages"],
+    "搜索消息或 Agent ID": ["メッセージ・Agent ID を検索", "Search messages or agent IDs"],
+    "消息类型": ["メッセージの種類", "Message type"],
+    "全部类型": ["すべての種類", "All types"],
+    "调度": ["作業調整", "Coordination"],
+    "暂无消息": ["メッセージはありません", "No messages yet"],
+    "活动记录": ["操作履歴", "Activity log"],
+    "搜索活动": ["履歴を検索", "Search activity"],
+    "搜索事件": ["イベントを検索", "Search events"],
+    "暂无活动": ["履歴はありません", "No activity yet"],
+    "发送消息": ["メッセージを送信", "Send message"],
+    "消息内容": ["メッセージ本文", "Message text"],
+    "收件人": ["宛先", "Recipient"],
+    "Agent ID 或 *": ["Agent ID または *", "Agent ID or *"],
+    "收件人 Agent ID，星号为广播": ["宛先の Agent ID（* は全員宛て）", "Recipient agent ID; * broadcasts to all"],
+    "内容": ["本文", "Content"],
+    "发送": ["送信", "Send"],
+    "最近消息": ["最近のメッセージ", "Recent messages"],
+    "关闭新增项目": ["プロジェクト追加を閉じる", "Close add project"],
+    "关闭": ["閉じる", "Close"],
+    "项目设置": ["プロジェクト設定", "Project settings"],
+    "项目名称": ["プロジェクト名", "Project name"],
+    "根目录": ["ルートフォルダー", "Root directory"],
+    "描述": ["説明", "Description"],
+    "可选": ["任意", "Optional"],
+    "项目描述": ["プロジェクトの説明", "Project description"],
+    "心跳失联超时": ["ハートビートのタイムアウト", "Heartbeat timeout"],
+    "秒": ["秒", "seconds"],
+    "空闲退出": ["無操作時の終了", "Idle timeout"],
+    "分钟": ["分", "minutes"],
+    "写入项目 agent 接入规则（保留现有 AGENTS.md）": ["Agent の参加ルールを追加（既存の AGENTS.md は保持）", "Add agent rules to the project (preserve existing AGENTS.md)"],
+    "取消": ["キャンセル", "Cancel"],
+    "创建项目": ["プロジェクトを作成", "Create project"],
+    "关闭发布公告": ["投稿画面を閉じる", "Close post dialog"],
+    "公告内容": ["投稿内容", "Post content"],
+    "标题": ["タイトル", "Title"],
+    "公告标题": ["投稿タイトル", "Post title"],
+    "标签": ["タグ", "Tags"],
+    "协作, 约定": ["連携, 取り決め", "collaboration, agreements"],
+    "发布": ["投稿", "Publish"],
+    "终止会话": ["セッションを終了", "End session"],
+    "关闭终止会话": ["終了確認を閉じる", "Close end-session dialog"],
+    "确认将此会话标记为已取消？": ["このセッションをキャンセル済みにしますか？", "Mark this session as cancelled?"],
+    "终止原因": ["終了理由", "Reason for ending"],
+    "说明": ["説明", "Notes"],
+    "终止原因或交接说明": ["終了理由・引き継ぎ事項", "Reason or handoff notes"],
+    "保留会话": ["セッションを継続", "Keep session"],
+    "确认终止": ["終了する", "Confirm end"],
+    "需要启用 JavaScript 才能连接协调台。": ["接続するには JavaScript を有効にしてください。", "Enable JavaScript to connect to the coordinator."],
+    "已完成": ["完了", "Completed"], "已空闲": ["無操作で終了", "Idle"],
+    "失败": ["失敗", "Failed"], "已取消": ["キャンセル済み", "Cancelled"], "已超时": ["タイムアウト", "Timed out"],
+    "项目已创建": ["プロジェクトを作成", "Project created"], "Agent 已加入": ["Agent が参加", "Agent joined"],
+    "会话已更新": ["セッションを更新", "Session updated"], "消息已发送": ["メッセージを送信", "Message sent"], "公告已发布": ["掲示板に投稿", "Post published"],
+    "未知时间": ["日時不明", "Unknown time"], "未记录": ["記録なし", "Not recorded"], "刚刚": ["たった今", "Just now"],
+    "未设置": ["未設定", "Not set"], "已结束": ["終了", "Ended"], "未知状态": ["状態不明", "Unknown status"],
+    "租约未记录": ["有効期限の記録なし", "Lease not recorded"], "租约已过期": ["有効期限切れ", "Lease expired"],
+    "未更新": ["更新なし", "No update"], "存在文件冲突的活动会话数": ["ファイルが競合しているアクティブセッション数", "Active sessions with file conflicts"],
+    "会话暂不可用，正在重试…": ["セッションを取得できません。再試行中…", "Sessions unavailable; retrying…"],
+    "没有匹配的会话": ["一致するセッションはありません", "No matching sessions"], "暂无 Agent 会话": ["Agent のセッションはありません", "No agent sessions yet"],
+    "暂无活动会话": ["アクティブなセッションはありません", "No active sessions"], "暂无会话": ["セッションはありません", "No sessions"],
+    "无": ["なし", "None"], "无文件冲突": ["ファイルの競合なし", "No file conflicts"],
+    "关闭会话详情": ["セッションの詳細を閉じる", "Close session details"], "关闭详情": ["詳細を閉じる", "Close details"],
+    "心跳": ["ハートビート", "Heartbeat"], "最近活动": ["最終更新", "Last activity"], "租约到期": ["有効期限", "Lease expiry"], "结束": ["終了", "Ended"],
+    "声明文件": ["申告ファイル", "Declared files"], "当前申领": ["現在の担当ファイル", "Current claims"], "冲突会话": ["競合セッション", "Conflicting sessions"], "交接说明": ["引き継ぎ事項", "Handoff notes"],
+    "正在加载公告…": ["投稿を読み込み中…", "Loading posts…"], "没有匹配的公告": ["一致する投稿はありません", "No matching posts"],
+    "已确认接收": ["受信確認済み", "Acknowledged"], "等待接收确认": ["受信確認待ち", "Awaiting acknowledgement"], "所有 Agent": ["すべての Agent", "All agents"],
+    "正在加载消息…": ["メッセージを読み込み中…", "Loading messages…"], "没有匹配的消息": ["一致するメッセージはありません", "No matching messages"],
+    "事件详情": ["イベントの詳細", "Event details"], "正在加载活动…": ["履歴を読み込み中…", "Loading activity…"], "没有匹配的活动": ["一致する履歴はありません", "No matching activity"],
+    "请填写此字段。": ["この項目を入力してください。", "Please fill in this field."], "正在提交…": ["送信中…", "Submitting…"],
+    "创建中…": ["作成中…", "Creating…"], "发送中…": ["送信中…", "Sending…"], "发布中…": ["投稿中…", "Publishing…"], "终止中…": ["終了処理中…", "Ending…"],
+    "项目已创建。": ["プロジェクトを作成しました。", "Project created."], "消息已提交。": ["メッセージを送信しました。", "Message submitted."], "公告已发布。": ["掲示板に投稿しました。", "Post published."],
+    "最多 12 个标签，每个标签不超过 40 个字符。": ["タグは12個まで、各40文字以内で入力してください。", "Use up to 12 tags, with no more than 40 characters each."],
+    "正在写入接入规则…": ["参加ルールを書き込み中…", "Installing agent rules…"], "写入中…": ["書き込み中…", "Installing…"],
+    "连接中断": ["接続が切れました", "Disconnected"], "已连接": ["接続済み", "Connected"], "等待管理员登录": ["管理者のログイン待ち", "Waiting for administrator sign-in"],
+    "项目暂不可用，正在重试…": ["プロジェクトを取得できません。再試行中…", "Projects unavailable; retrying…"],
+    "项目暂不可用": ["プロジェクトを取得できません", "Projects unavailable"],
+    "暂无项目": ["プロジェクトはありません", "No projects yet"], "没有匹配的项目": ["一致するプロジェクトはありません", "No matching projects"],
+    "管理员工作区": ["管理者ワークスペース", "Administrator workspace"], "工作区暂不可用": ["ワークスペースを利用できません", "Workspace unavailable"],
+    "登录后显示项目和会话。": ["ログインするとプロジェクトとセッションを表示します。", "Sign in to view projects and sessions."], "请检查本地服务连接。": ["ローカルサービスへの接続を確認してください。", "Check the local service connection."], "项目列表为空。": ["プロジェクト一覧は空です。", "The project list is empty."],
+    "请求失败，请稍后重试。": ["リクエストに失敗しました。後でもう一度お試しください。", "Request failed. Please try again."], "[已隐藏]": ["[非表示]", "[redacted]"],
+    "服务器返回了无效的数据。": ["サーバーから無効なデータが返されました。", "The server returned invalid data."], "请求超时，请检查本地服务。": ["タイムアウトしました。ローカルサービスを確認してください。", "Request timed out. Check the local service."],
+    "无法连接本地服务，请检查服务是否已启动。": ["ローカルサービスに接続できません。起動しているか確認してください。", "Cannot connect. Check that the local service is running."],
+    "启动授权已失效，请重新运行启动器。": ["起動時の認証が失効しました。ランチャーを再実行してください。", "The sign-in link expired. Run the launcher again."],
+    "无法完成管理员授权，请检查本地服务后重新运行启动器。": ["管理者認証を完了できません。ローカルサービスを確認し、ランチャーを再実行してください。", "Administrator sign-in failed. Check the local service and run the launcher again."],
+    "服务未返回管理员凭据。": ["サービスから管理者の認証情報が返されませんでした。", "The service did not return administrator credentials."],
+    "项目列表格式无效。": ["プロジェクト一覧の形式が無効です。", "Invalid project list format."], "项目快照格式无效。": ["プロジェクト情報の形式が無効です。", "Invalid project snapshot format."],
+    "项目已提交，但返回数据无效。请先刷新确认，避免重复创建。": ["作成リクエストは送信済みですが、応答が無効です。重複作成を避けるため、先に一覧を更新してください。", "The project was submitted, but the response is invalid. Refresh before trying again to avoid duplicates."],
+    "未返回安装结果。": ["ルールの書き込み結果が返されませんでした。", "No installation result was returned."],
+    "{n} 秒前": ["{n}秒前", "{n} seconds ago"], "{n} 分钟前": ["{n}分前", "{n} minutes ago"], "{n} 小时前": ["{n}時間前", "{n} hours ago"], "{n} 天前": ["{n}日前", "{n} days ago"],
+    "{n} 分钟": ["{n}分", "{n} min"], "{n} 秒": ["{n}秒", "{n} sec"],
+    "请求失败（{status}）": ["リクエスト失敗（{status}）", "Request failed ({status})"],
+    "{error} 将自动重试。": ["{error} 自動的に再試行します。", "{error} Retrying automatically."],
+    "同步于 {time}": ["最終同期 {time}", "Synced at {time}"], "租约 {lease} · 空闲 {idle}": ["有効期間 {lease} · 無操作 {idle}", "Lease {lease} · Idle {idle}"],
+    "租约剩余 {n} 秒": ["有効期限まで{n}秒", "Lease: {n} sec remaining"], "申领 {n}": ["担当 {n}", "Claimed {n}"], "{n} 处冲突": ["競合 {n}件", "Conflicts: {n}"],
+    "终止 {agent} 的会话": ["{agent} のセッションを終了", "End session for {agent}"], "{agent} 的会话已取消。": ["{agent} のセッションをキャンセルしました。", "Session for {agent} cancelled."],
+    "会话状态：{status}": ["セッション：{status}", "Session: {status}"],
+    "接入规则已写入{files}": ["参加ルールを書き込みました{files}", "Agent rules installed{files}"], "接入规则写入失败：{error}": ["参加ルールの書き込みに失敗しました：{error}", "Could not install agent rules: {error}"],
+    "Only the owner can install project rules.": ["参加ルールを書き込めるのは管理者のみです。", "Only the owner can install project rules.", "只有管理员可以安装接入规则。"],
+    "An agent is editing the project rules. Wait for its file claim to end.": ["別の Agent が参加ルールを編集中です。担当の解除をお待ちください。", "An agent is editing the project rules. Wait for its file claim to end.", "有 Agent 正在编辑项目规则，请等待其释放文件申领。"],
+    "Session is closed.": ["セッションは終了しています。", "Session is closed.", "会话已关闭。"], "Project not found.": ["プロジェクトが見つかりません。", "Project not found.", "找不到项目。"], "Session not found.": ["セッションが見つかりません。", "Session not found.", "找不到会话。"],
+    "Owner sign-in required.": ["管理者としてのログインが必要です。", "Owner sign-in required.", "需要管理员登录。"],
+    "Only the project owner can create projects.": ["プロジェクトを作成できるのは管理者のみです。", "Only the project owner can create projects.", "只有管理员可以创建项目。"],
+    "Use an existing absolute project directory.": ["既存のプロジェクトフォルダーを絶対パスで指定してください。", "Use an existing absolute project directory.", "请填写已存在的项目目录绝对路径。"],
+    "Project root must be a directory.": ["ルートにはフォルダーを指定してください。", "Project root must be a directory.", "项目根路径必须是目录。"],
+    "Project directory does not exist or cannot be read.": ["プロジェクトフォルダーが存在しないか、読み取れません。", "Project directory does not exist or cannot be read.", "项目目录不存在或无法读取。"],
+    "This project directory is already registered.": ["このプロジェクトフォルダーは登録済みです。", "This project directory is already registered.", "此项目目录已经注册。"],
+    "Lease must be 15–300 seconds; idle timeout must be 1–60 minutes.": ["有効期間は15～300秒、無操作時の終了は1～60分にしてください。", "Lease must be 15–300 seconds; idle timeout must be 1–60 minutes.", "租约需为15～300秒，空闲退出需为1～60分钟。"],
+    "Invalid message recipient or kind.": ["宛先またはメッセージの種類が無効です。", "Invalid message recipient or kind.", "收件人或消息类型无效。"],
+    "Invalid note tags.": ["投稿のタグが無効です。", "Invalid note tags.", "公告标签无效。"],
+    "Agent session not found.": ["Agent のセッションが見つかりません。", "Agent session not found.", "找不到 Agent 会话。"],
+    "Session is closed. Register again before working.": ["セッションは終了しています。作業前に再登録してください。", "Session is closed. Register again before working.", "会话已关闭，请重新注册后再开始工作。"],
+    "Session expired. Register again.": ["セッションの有効期限が切れました。再登録してください。", "Session expired. Register again.", "会话已过期，请重新注册。"],
+    "Project rules must be ordinary files.": ["参加ルールは通常のファイルである必要があります。", "Project rules must be ordinary files.", "项目规则必须为普通文件。"],
+    "Incomplete existing coordination block; restore it before installing rules.": ["既存の連携ルールが不完全です。修復してから再実行してください。", "Incomplete existing coordination block; restore it before installing rules.", "现有协调规则区块不完整，请修复后再安装。"],
+    "Duplicate coordination blocks require manual cleanup.": ["連携ルールが重複しています。手動で整理してください。", "Duplicate coordination blocks require manual cleanup.", "协调规则区块重复，请手动整理。"],
+    "Invalid project name.": ["プロジェクト名が無効です。", "Invalid project name.", "项目名称无效。"],
+    "Invalid description.": ["プロジェクトの説明が無効です。", "Invalid description.", "项目描述无效。"],
+    "Invalid note title.": ["投稿タイトルが無効です。", "Invalid note title.", "公告标题无效。"],
+    "Invalid note.": ["投稿内容が無効です。", "Invalid note.", "公告内容无效。"],
+    "Invalid handoff summary.": ["引き継ぎ事項が無効です。", "Invalid handoff summary.", "交接说明无效。"],
+    "Invalid recipient agent ID.": ["宛先の Agent ID が無効です。", "Invalid recipient agent ID.", "收件人 Agent ID 无效。"],
+    "Invalid message.": ["メッセージが無効です。", "Invalid message.", "消息内容无效。"],
+    "Invalid title.": ["タイトルが無効です。", "Invalid title.", "标题无效。"],
+    "Invalid text.": ["本文が無効です。", "Invalid text.", "正文无效。"],
+    "路线图": ["ロードマップ", "Roadmap", "路线图"]
+  }
+  </script>
+</body>
+</html>
