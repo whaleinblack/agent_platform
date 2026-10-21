@@ -17,7 +17,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   await page.goto(base+'/#owner='+ticket.ticket);await page.locator('#tab-roadmap').click();
   const frame=page.frameLocator('#roadmap-frame');await frame.getByRole('heading',{name:'路线图示例'}).waitFor();
   assert.equal(await page.locator('#roadmap-frame').getAttribute('sandbox'),'');
-  assert.equal(await frame.locator('body').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(228, 247, 235)');
+  assert.equal(await frame.locator('body').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(12, 14, 18)');
   assert.equal(await page.evaluate(()=>window.roadmapEscaped),undefined);
   assert.equal(leakedRequests,0,'no image/script requests may reach the HTTP server');
   assert.ok(blocked.some(e=>/csp|blocked/i.test(e)),JSON.stringify(blocked));

@@ -26,7 +26,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'playwright');
       }
       if (value) return route.fulfill({json: value});
       const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      assert.ok(['index.html', 'app.js', 'styles.css', 'icons.js'].includes(name));
+      assert.ok(['index.html', 'app.js', 'styles.css', 'icons.js', 'roadmap.js'].includes(name));
       return route.fulfill({body: await fs.readFile(path.join(__dirname, '../public', name), 'utf8'), contentType: name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html'});
     });
     const page = await context.newPage(); page.setDefaultTimeout(8000);

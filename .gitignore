@@ -10,3 +10,4 @@ playwright-report/
 *.pem
 *.key
 *.pfx
+.agent-coordinator.json

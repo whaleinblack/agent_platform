@@ -8,9 +8,11 @@ const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 (async () => {
   const publicDirectory = path.resolve(__dirname, '../public');
   const assets = new Map();
-  for (const file of ['index.html', 'styles.css', 'icons.js', 'app.js']) {
+  for (const file of ['index.html', 'styles.css', 'icons.js', 'roadmap.js', 'app.js']) {
     assets.set('/' + file, await fs.readFile(path.join(publicDirectory, file), 'utf8'));
   }
+  // Reproduce a browser-injected light body background, including late injection.
+  assets.set('/styles.css', assets.get('/styles.css') + '\nbody, #overlay { background: rgb(248, 248, 248); }\n');
   const html = assets.get('/index.html');
   assert.ok(html.indexOf('src="/app.js?theme-bootstrap=1"') < html.indexOf('href="/styles.css"'));
   assert.match(html, /<script src="\/app\.js\?theme-bootstrap=1" data-theme-bootstrap><\/script>/);
@@ -90,6 +92,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   const theme = async target => target.evaluate(() => ({mode: document.documentElement.dataset.themeMode, resolved: document.documentElement.dataset.theme, selected: document.getElementById('theme-select')?.value}));
   const expectTheme = async (target, mode, resolved) => {
     await target.waitForFunction(({mode, resolved}) => document.documentElement.dataset.themeMode === mode && document.documentElement.dataset.theme === resolved && document.getElementById('theme-select').value === mode, {mode, resolved});
+    const backgrounds = await target.evaluate(() => ({root: getComputedStyle(document.documentElement).backgroundColor, body: getComputedStyle(document.body).backgroundColor}));
+    assert.equal(backgrounds.body, backgrounds.root, mode + ': body must follow the theme despite browser-injected light backgrounds');
   };
   const shot = async (target, name) => target.screenshot({path: path.join(output, name + '.png'), fullPage: true, animations: 'disabled', timeout: 8000});
   function contrast(foreground, background) {

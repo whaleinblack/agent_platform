@@ -86,3 +86,91 @@ Managed task cancellation covers the direct child only, not a whole process tree
 
 MIT. Third-party icon notices are retained in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `public/icons.LICENSE`.
+
+## Roadmap themes
+
+Roadmap previews follow the platform's resolved light/dark/system setting and
+update automatically on theme changes. Authors must use the `--roadmap-*`
+semantic colors and starter in [AGENT_PROTOCOL.md](AGENT_PROTOCOL.md#roadmap-theme-authoring-standard).
+Existing saved HTML is preserved; hardcoded colors inside cards, SVGs or images
+need migration to the variables. No filters or sandbox exceptions are used.
+Run `node tests/roadmap-theme.browser.cjs` for the theme/sandbox regression matrix.
+This project has no build step; server changes require a coordinated restart after
+active agents finish. Do not restart the shared service as part of validation.
+
+## Project settings and future online collaboration
+
+The selected project has a Settings button; right-click a sidebar project (or
+press Shift+F10/Context Menu) for Settings and Delete. Settings edit its name,
+notes, existing local root, page domain/IP, repository path/address and planned
+member list. Planned members are metadata only, not invitations or access grants.
+The local-only owner/agent authentication model is unchanged.
+
+Owner-authenticated `PATCH /api/projects/:id` accepts `baseRevision` (the current
+`settingsRevision`, or zero for legacy records) and editable fields `name`,
+`description`, `root`, `pageAddress`, `repositoryPath`, `plannedMembers`.
+`POST /api/projects/:id/delete` accepts the same revision. Stale changes return
+409. Deletion is a soft archive: the project disappears from active lists and
+rejects new joins, but task/message/note/roadmap history and disk files remain.
+There is currently no restore UI. Active working/waiting sessions block root
+changes and deletion. Changing a root does not move files or install rules;
+reinstall onboarding rules at the new location after the change. Archived records
+keep their original project IDs, even when the directory is registered anew.
+
+Planned deployment target: **https://chufa.wang/agents/**. This is a roadmap,
+not an active deployment. Before public hosting, implement accounts, private
+projects by default, project ownership, explicit invitations and membership
+revocation, server-side authorization on all routes/events/roadmap renders,
+scoped agent/device credentials and `/agents/` subpath support. The current public
+local project-list API and local owner bootstrap are not an online privacy model.
+A removed member must lose access on subsequent API/event requests; a hidden UI
+alone is insufficient. Decide owner/admin/member/viewer roles, pending invitation
+expiry, auditing, backups and rollback before the hosted pilot. Keep local mode.
+
+Validation: `npm test` and `node tests/project-settings.browser.cjs` (installed
+Edge by default, or `PLAYWRIGHT_CHANNEL`). Server changes need a coordinated
+restart; static UI updates alone do not activate the new API.
+
+## Three rule levels and coordinated completion
+
+The project Rules page separates platform rules (read-only service protocol),
+shared project instructions (persisted with the project) and local instructions
+(the custom portion of the current root's `AGENTS.md`). Platform requirements
+apply first, then project instructions, then local defaults. The generated agent
+coordination block is preserved separately when local rules are saved. Existing
+files are kept; writing local rules is not a policy installation.
+
+Authenticated local owners can edit this project's project/local instructions.
+They may explicitly grant a working agent project and/or local editing rights,
+with a reason and 1–1440 minute expiry. Grants bind the current project and agent
+session; revocation, expiry, or ending that session removes API edit authority.
+Agents use their own session credentials. Local writes also require an active
+`AGENTS.md` claim, and conflict with another agent's current file claims. These
+are cooperative claims, not OS locks. The current local owner is the manager;
+online project-owner/admin identities remain part of the online roadmap.
+
+`GET /api/projects/:id/rules` returns all levels, their revisions, permissions,
+grants and the caller's last read confirmation. `PATCH` accepts
+`{scope:"project"|"local",baseRevision,text}`. Project revisions are numbers;
+local/platform revisions are SHA-256 fingerprints. Text is limited to 64 KiB.
+`POST .../rules/grants` accepts `{agentId,scopes,reason,expiresInMinutes}` or
+`{grantId,revoke:true}`. `POST .../rules/confirm` accepts
+`{revisions:{platform,project,local}}`. A changed revision returns 409 with a
+machine-readable code. Saving never silently confirms reading. Project and local
+changes retain a bounded history and emit audit events without copying rule text
+into the event feed. Symlinked or malformed local rule files require repair
+before editing; unmanaged text may be positioned after the preserved managed
+block on save.
+
+In a user-designated coordinated round, workers report results, release file
+claims and keep read-only coordination listening until the coordinator's end
+notification. That notification ends any no-message waiting timer early and
+requires no additional human confirmation. The coordinator checks results,
+notifies unassigned standby agents to exit, verifies session closure, posts the
+combined report and exits last. Direct human cancellation still takes priority.
+The authoritative details and editing boundaries are in `AGENT_PROTOCOL.md`.
+
+Tests: `npm test` covers grants, expiry, revocation, cross-project/session access,
+revision conflicts, read confirmation and local-file preservation. Filesystem
+symlink cases require symlink permission on Windows; unsupported creation is
+reported explicitly. Actual rule-file edits are tested only in temporary projects.

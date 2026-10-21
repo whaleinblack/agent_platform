@@ -35,6 +35,7 @@ const HELP = `Agent coordinator CLI (no project-administration commands)
   sessions             Local metadata only; stored status is not a verified lease
   heartbeat            Prints lease and optional unread inbox summary; does not acknowledge
   watch                Background output does not guarantee delivery into a model context
+                       Retries timeouts/network/5xx until the last confirmed lease expires
   help | --help        Print this help
 `;
 
@@ -107,6 +108,19 @@ function stringList(options, repeated, json) {
   return value;
 }
 
+// Watch output is JSON on stdout; transport retries are also summarized on stderr.
+export function connectionWarning(event) {
+  if (!event?.synthetic || !['connection.retrying', 'connection.recovered'].includes(event.type)) return '';
+  const { channel, failures, error, retryInMs, leaseVerified, leaseRemainingMs } = event.data;
+  if (event.type === 'connection.recovered') {
+    return `Coordinator ${channel} request recovered after ${failures} failed attempt(s); lease renewal continues.`;
+  }
+  const lease = leaseVerified
+    ? `last confirmed lease expires in ${Math.ceil(leaseRemainingMs / 1000)}s; claims are released if it cannot be renewed by then`
+    : `lease not yet verified (gives up in ${Math.ceil(leaseRemainingMs / 1000)}s); do not start editing`;
+  return `Coordinator ${channel} request failed (attempt ${failures}): ${error}. Retrying in ${Math.ceil(retryInMs / 1000)}s; ${lease}.`;
+}
+
 export function installShutdownSignals(processLike, controller) {
   const stop = () => { if (!controller.signal.aborted) controller.abort(); };
   processLike.on('SIGINT', stop);
@@ -158,7 +172,11 @@ export async function main(argv = process.argv.slice(2), {
 
       const monitorOptions = {
         signal: controller?.signal, clock, heartbeatIntervalMs, progressIntervalMs,
-        onEvent: event => write({ event }),
+        onEvent: event => {
+          write({ event });
+          const warning = connectionWarning(event);
+          if (warning) stderr.write(`${warning}\n`);
+        },
         onSession: session => {
           const key = JSON.stringify([session.status, session.files, session.conflicts]);
           if (key !== lastSession) { lastSession = key; write({ session }); }

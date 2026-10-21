@@ -67,3 +67,21 @@ test('agent CLI claims, reads and publishes an HTML file using only its session 
  assert.equal(c.roadmap(p.id,c.ownerToken).html,'<h1>Milestone A</h1>');assert.equal(error,'');assert.ok(!output.includes(handle.session.token));
  assert.equal(await cli(['roadmap-write','--session',handle.session.id,'--revision','1','--html-file',file],opts),1);assert.match(error,/409/);
 });
+
+test('theme rendering is allowlisted and preserves stored source and CSP', async t => {
+ const {c,p,join}=await fixture(t),a=await join('theme-reader');
+ const html='<!doctype html><html><head><title>Saved</title></head><body style="background:white;color:black"><h1>Saved milestone</h1></body></html>';
+ await c.updateRoadmap(p.id,{baseRevision:0,html},c.ownerToken);
+ const server=createHttpServer(c,path.resolve('public'),{port:0});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ t.after(()=>new Promise(r=>{server.close(r);server.closeAllConnections();}));
+ const base='http://localhost:'+server.address().port+'/api/projects/'+p.id+'/roadmap/render';
+ for(const [requested,expected] of [['dark','dark'],['light','light'],['system','light'],['</style><script>bad()</script>','light']]) {
+   const r=await fetch(base+'?theme='+encodeURIComponent(requested),{headers:{Authorization:'Bearer '+a.token}});
+   assert.equal(r.headers.get('content-security-policy'),roadmapPolicy);
+   const rendered=await r.text();assert.ok(rendered.startsWith(html));
+   assert.ok(rendered.includes(`data-roadmap-theme="${expected}"`));
+   assert.ok(rendered.includes('--roadmap-border:'));assert.ok(!rendered.includes('bad()'));
+ }
+ assert.equal(c.roadmap(p.id,a.token).html,html);assert.equal(c.roadmap(p.id,a.token).revision,1);
+});

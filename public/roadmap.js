@@ -15,9 +15,10 @@
       $('roadmap-html').disabled=pending||!token||!d;$('roadmap-editor').disabled=pending||!token||!d;
       views();if(!d||!token)return;
       $('roadmap-meta').textContent=`${t('revision')} ${d.data.revision} · ${d.data.editorAgentId||t('unassigned')}${d.data.updatedAt?' · '+new Date(d.data.updatedAt).toLocaleString({zh:'zh-CN',ja:'ja-JP',en:'en-US'}[lang])+' · '+d.data.updatedBy:''}`;
-      const key=project+':'+d.data.revision;
+      const theme=window.AgentCoordinatorTheme?.resolved==='dark'?'dark':'light';
+      const key=project+':'+d.data.revision+':'+theme;
       $('roadmap-empty').hidden=!!d.data.html;$('roadmap-frame').hidden=!d.data.html;
-      if(stamp!==key){$('roadmap-frame').src=d.data.html?`/api/projects/${encodeURIComponent(project)}/roadmap/render?v=${d.data.revision}`:'about:blank';stamp=key;}
+      if(stamp!==key){$('roadmap-frame').src=d.data.html?`/api/projects/${encodeURIComponent(project)}/roadmap/render?v=${d.data.revision}&theme=${theme}`:'about:blank';stamp=key;}
       if($('roadmap-history').dataset.key!==key+lang){$('roadmap-history').replaceChildren(new Option(t('history'),''),...[...(d.data.history||[])].reverse().map(v=>new Option(`${t('revision')} ${v.revision} · ${v.updatedBy}`,String(v.revision))));$('roadmap-history').dataset.key=key+lang;}
     }
     function accept(id,data){
@@ -30,7 +31,7 @@
     async function load(force=false){
       const id=project;if(!id||!token||loading===id)return;
       if(force&&current()?.dirty&&!confirm(t('discard')))return;
-      if(force)drafts.delete(id);loading=id;show(t('loading'));paint();
+      if(force){drafts.delete(id);stamp='';}loading=id;show(t('loading'));paint();
       try{const result=await api(`/api/projects/${encodeURIComponent(id)}/roadmap`);accept(id,result.roadmap);}catch(e){if(id===project)show(e.status===404?({zh:'路线图后端待更新；其他功能仍可正常使用。',ja:'ロードマップのサーバー更新待ちです。他の機能は引き続き利用できます。',en:'Roadmap server update is pending. Other features remain available.'}[lang]):e.message);}finally{if(loading===id)loading='';}
     }
     async function save(assign=false){
@@ -42,6 +43,7 @@
     $('roadmap-html').oninput=()=>{const d=current();if(d){d.html=$('roadmap-html').value;d.dirty=true;show(t('dirty'));paint();}};
     $('roadmap-save').onclick=()=>void save();$('roadmap-assign').onclick=()=>void save(true);$('roadmap-reload').onclick=()=>void load(true);
     $('roadmap-history').onchange=()=>{const d=current(),old=d?.data.history.find(v=>String(v.revision)===$('roadmap-history').value);if(old){d.html=old.html;d.dirty=true;$('roadmap-html').value=d.html;view='code';show(t('dirty'));paint();}};
+    window.addEventListener('agent-coordinator-themechange',paint);
     return {render(id,snapshot,authorized,language,visible){
       lang=language;token=!!authorized;
       if(project!==id){project=id;loading='';stamp='';const d=current();$('roadmap-html').value=d?.html||'';$('roadmap-editor').value=d?.data.editorAgentId||'';$('roadmap-frame').src='about:blank';$('roadmap-frame').hidden=true;$('roadmap-empty').hidden=false;$('roadmap-meta').textContent='';show('');}

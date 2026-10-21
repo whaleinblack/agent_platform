@@ -26,7 +26,7 @@
     <main id="main" tabindex="-1">
       <header class="workspace-header">
         <div class="project-heading"><p class="eyebrow">项目工作区</p><h1 id="project-title">选择项目</h1><p id="project-root" class="project-root"></p><p id="project-description" class="project-description" hidden></p></div>
-        <div class="header-actions"><div class="sync-meta"><span id="last-sync">尚未同步</span><span id="project-settings"></span></div><button id="policy-button" type="button" class="secondary-button" data-action="install-policy" hidden><i data-lucide="file-check" aria-hidden="true"></i><span>接入规则</span></button><label class="theme-control" title="主题"><span id="theme-icon" aria-hidden="true"><i data-lucide="sun-moon"></i></span><span class="sr-only">主题</span><select id="theme-select" aria-label="主题"><option value="dark">深色</option><option value="light">浅色</option><option value="system">跟随系统</option></select></label>
+        <div class="header-actions"><div class="sync-meta"><span id="last-sync">尚未同步</span><span id="project-settings"></span></div><div class="header-buttons"><button id="project-settings-button" type="button" class="secondary-button" data-action="edit-project" hidden disabled><i data-lucide="settings" aria-hidden="true"></i><span>项目设置</span></button><button id="policy-button" type="button" class="secondary-button" data-action="install-policy" hidden><i data-lucide="file-check" aria-hidden="true"></i><span>接入规则</span></button></div><label class="theme-control" title="主题"><span id="theme-icon" aria-hidden="true"><i data-lucide="sun-moon"></i></span><span class="sr-only">主题</span><select id="theme-select" aria-label="主题"><option value="dark">深色</option><option value="light">浅色</option><option value="system">跟随系统</option></select></label>
           <label class="theme-control language-control" title="语言"><i data-lucide="languages" aria-hidden="true"></i><select id="language-select" aria-label="语言"><option value="zh">中文</option><option value="ja">日本語</option><option value="en">English</option></select></label></div>
       </header>
       <section id="owner-sign-in" class="notice owner-notice" aria-labelledby="owner-sign-in-title" role="status" hidden><i data-lucide="key-round" aria-hidden="true"></i><div><h2 id="owner-sign-in-title">需要管理员登录</h2><p>无需输入密码。双击本机 Start-Agent-Coordinator.cmd 即可恢复管理员登录；Windows 登录时也会自动打开已授权的管理页。</p><p id="owner-sign-in-error" hidden></p></div></section>
@@ -48,6 +48,7 @@
               <button id="tab-agents" type="button" role="tab" aria-selected="true" aria-controls="panel-agents" data-tab="agents"><i data-lucide="users" aria-hidden="true"></i>会话 <span id="agents-count" class="count">0</span></button>
               <button id="tab-board" type="button" role="tab" aria-selected="false" aria-controls="panel-board" data-tab="board" tabindex="-1"><i data-lucide="pin" aria-hidden="true"></i>公告板 <span id="notes-count" class="count">0</span></button>
               <button id="tab-roadmap" type="button" role="tab" aria-selected="false" aria-controls="panel-roadmap" data-tab="roadmap" tabindex="-1"><i data-lucide="map" aria-hidden="true"></i>路线图</button>
+              <button id="tab-rules" type="button" role="tab" aria-selected="false" aria-controls="panel-rules" data-tab="rules" tabindex="-1"><i data-lucide="scroll-text" aria-hidden="true"></i>项目规则</button>
               <button id="tab-messages" type="button" role="tab" aria-selected="false" aria-controls="panel-messages" data-tab="messages" tabindex="-1"><i data-lucide="messages-square" aria-hidden="true"></i>消息 <span id="messages-count" class="count">0</span></button>
               <button id="tab-events" type="button" role="tab" aria-selected="false" aria-controls="panel-events" data-tab="events" tabindex="-1"><i data-lucide="activity" aria-hidden="true"></i>活动</button>
             </div>
@@ -68,6 +69,61 @@
             </section>
 
             <section id="panel-roadmap" class="tab-panel" role="tabpanel" aria-labelledby="tab-roadmap" tabindex="0" hidden></section>
+
+            <section id="panel-rules" class="tab-panel" role="tabpanel" aria-labelledby="tab-rules" tabindex="0" hidden>
+              <div class="section-toolbar rules-toolbar">
+                <p id="rules-status" class="rules-status" role="status"><span id="rules-status-badge" class="badge">未确认</span><span id="rules-status-text">正在载入规则…</span></p>
+                <div class="rules-toolbar-actions"><button id="rules-reload" type="button" class="secondary-button compact"><i data-lucide="refresh-cw" aria-hidden="true"></i><span>重新载入</span></button><button id="rules-confirm" type="button" class="primary-button compact"><i data-lucide="check-check" aria-hidden="true"></i><span>确认当前规则</span></button></div>
+              </div>
+              <p class="rules-help">确认表示已阅读当前三级规则版本；保存修改、确认阅读与授权 Agent 是三个独立操作。</p>
+              <p id="rules-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+              <div id="rules-content" class="rules-grid" hidden>
+                <article class="rules-card" data-scope="platform" aria-labelledby="rules-platform-title">
+                  <header class="rules-card-head"><h3 id="rules-platform-title"><i data-lucide="shield" aria-hidden="true"></i>平台规则</h3><span class="badge">只读</span></header>
+                  <p class="rules-meta" translate="no"><span id="rules-platform-source"></span><span id="rules-platform-revision"></span></p>
+                  <p class="rules-scope-help">由协作平台统一提供，适用于所有项目；在项目页只能查看。</p>
+                  <details class="rules-details"><summary>查看全文</summary><pre id="rules-platform-text" class="rules-pre" translate="no"></pre></details>
+                </article>
+                <article class="rules-card" data-scope="project" aria-labelledby="rules-project-title">
+                  <header class="rules-card-head"><h3 id="rules-project-title"><i data-lucide="users" aria-hidden="true"></i>项目规则</h3><span id="rules-project-access" class="badge">只读</span></header>
+                  <p class="rules-meta" translate="no"><span id="rules-project-revision"></span><span id="rules-project-updated"></span></p>
+                  <p class="rules-scope-help">本项目所有 Agent 共享的约定，保存在协调台中。</p>
+                  <label for="rules-project-text" class="sr-only">项目规则</label><textarea id="rules-project-text" class="rules-editor" spellcheck="false" placeholder="尚未填写项目规则"></textarea>
+                  <p id="rules-project-state" class="rules-state" role="status"></p>
+                  <div class="rules-card-actions"><button id="rules-project-discard" type="button" class="secondary-button compact" hidden><span>放弃修改</span></button><button id="rules-project-latest" type="button" class="secondary-button compact" hidden><i data-lucide="refresh-cw" aria-hidden="true"></i><span>载入最新版本</span></button><button id="rules-project-save" type="button" class="primary-button compact"><i data-lucide="save" aria-hidden="true"></i><span>保存项目规则</span></button></div>
+                </article>
+                <article class="rules-card" data-scope="local" aria-labelledby="rules-local-title">
+                  <header class="rules-card-head"><h3 id="rules-local-title"><i data-lucide="folder-cog" aria-hidden="true"></i>本地规则</h3><span id="rules-local-access" class="badge">只读</span></header>
+                  <p class="rules-meta" translate="no"><span id="rules-local-source"></span><span id="rules-local-revision"></span></p>
+                  <p class="rules-scope-help">项目根目录 AGENTS.md 中的自定义部分。保存时原样保留下方的托管协调块。</p>
+                  <label for="rules-local-text" class="sr-only">本地规则</label><textarea id="rules-local-text" class="rules-editor" spellcheck="false" placeholder="AGENTS.md 中暂无自定义规则"></textarea>
+                  <details class="rules-details"><summary>托管协调块（只读）</summary><pre id="rules-local-managed" class="rules-pre" translate="no"></pre></details>
+                  <p id="rules-local-state" class="rules-state" role="status"></p>
+                  <div class="rules-card-actions"><button id="rules-local-discard" type="button" class="secondary-button compact" hidden><span>放弃修改</span></button><button id="rules-local-latest" type="button" class="secondary-button compact" hidden><i data-lucide="refresh-cw" aria-hidden="true"></i><span>载入最新版本</span></button><button id="rules-local-save" type="button" class="primary-button compact"><i data-lucide="save" aria-hidden="true"></i><span>保存本地规则</span></button></div>
+                </article>
+                <section id="rules-grants" class="rules-card rules-grants" aria-labelledby="rules-grants-title" hidden>
+                  <header class="rules-card-head"><h3 id="rules-grants-title"><i data-lucide="key-round" aria-hidden="true"></i>规则修改授权</h3></header>
+                  <p class="settings-notice"><i data-lucide="info" aria-hidden="true"></i><span>由本机管理员授予。只针对当前项目中工作中的会话，最长 24 小时，可随时撤销；同一 Agent 的新会话不继承授权。修改本地规则还需该 Agent 申领 AGENTS.md。在线账号与角色尚未实现。</span></p>
+                  <form id="rules-grant-form" class="rules-grant-form">
+                    <fieldset id="rules-grant-fields"><legend class="sr-only">授予规则修改授权</legend>
+                      <div class="form-columns">
+                        <div><label for="rules-grant-agent">工作中的 Agent</label><select id="rules-grant-agent" required></select></div>
+                        <div><label for="rules-grant-minutes">有效期 <span class="unit">分钟</span></label><input id="rules-grant-minutes" type="number" min="1" max="1440" step="1" value="60" required></div>
+                      </div>
+                      <div class="rules-scopes" role="group" aria-labelledby="rules-grant-scope-label"><span id="rules-grant-scope-label" class="rules-field-label">授权范围</span>
+                        <label class="checkbox-label"><input type="checkbox" name="scope" value="project"><span>项目规则</span></label>
+                        <label class="checkbox-label"><input type="checkbox" name="scope" value="local"><span>本地规则</span></label>
+                      </div>
+                      <label for="rules-grant-reason">授权理由</label><textarea id="rules-grant-reason" rows="2" maxlength="2000" required placeholder="说明为什么需要此授权"></textarea>
+                    </fieldset>
+                    <p id="rules-grant-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+                    <div class="rules-card-actions"><button id="rules-grant-submit" type="submit" class="primary-button compact"><i data-lucide="key-round" aria-hidden="true"></i><span>授予授权</span></button></div>
+                  </form>
+                  <h4 class="rules-subheading">授权记录</h4>
+                  <ul id="rules-grant-list" class="rules-grant-list"></ul><p id="rules-grant-empty" class="subtle-empty">暂无授权记录</p>
+                </section>
+              </div>
+            </section>
 
             <section id="panel-messages" class="tab-panel" role="tabpanel" aria-labelledby="tab-messages" tabindex="0" hidden>
               <div class="section-toolbar"><div class="search-wrap"><i data-lucide="search" aria-hidden="true"></i><input id="message-search" type="search" aria-label="搜索消息" placeholder="搜索消息或 Agent ID" autocomplete="off"></div><label class="select-filter"><span class="sr-only">消息类型</span><select id="message-filter"><option value="all">全部类型</option><option value="message">消息</option><option value="schedule">调度</option></select></label></div>
@@ -111,6 +167,48 @@
       </fieldset>
       <p id="project-feedback" class="form-feedback" role="status" aria-live="polite"></p>
       <div class="dialog-actions"><button type="button" class="secondary-button" data-action="close-project">取消</button><button id="create-project-button" type="submit" class="primary-button"><i data-lucide="plus" aria-hidden="true"></i><span>创建项目</span></button></div>
+    </form>
+  </dialog>
+
+  <div id="project-context-menu" class="project-context-menu" role="menu" aria-label="项目操作" hidden>
+    <button type="button" role="menuitem" tabindex="-1" data-project-command="settings"><i data-lucide="settings" aria-hidden="true"></i><span>设置</span></button>
+    <button type="button" role="menuitem" tabindex="-1" data-project-command="rules"><i data-lucide="scroll-text" aria-hidden="true"></i><span>项目规则</span></button>
+    <button type="button" role="menuitem" tabindex="-1" class="danger" data-project-command="delete"><i data-lucide="trash-2" aria-hidden="true"></i><span>删除</span></button>
+  </div>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <form id="settings-form">
+      <div class="dialog-heading"><div><h2 id="settings-title">项目设置</h2><p id="settings-context" class="dialog-context" translate="no"></p></div><button type="button" class="icon-button" id="close-settings" data-action="close-settings" aria-label="关闭项目设置" title="关闭"><i data-lucide="x"></i></button></div>
+      <fieldset id="settings-fields"><legend class="sr-only">项目信息</legend>
+        <section class="settings-section" aria-labelledby="settings-basic-title"><h3 id="settings-basic-title">基本信息</h3>
+          <label for="settings-name">项目名称</label><input id="settings-name" required maxlength="100" autocomplete="off">
+          <label for="settings-description">备注 <span class="optional">可选</span></label><textarea id="settings-description" rows="2" maxlength="2000" placeholder="项目说明、约定或注意事项"></textarea>
+        </section>
+        <section class="settings-section" aria-labelledby="settings-location-title"><h3 id="settings-location-title">位置与地址</h3>
+          <label for="settings-root">本地路径</label><input id="settings-root" required spellcheck="false" autocomplete="off" placeholder="C:/workspace/project" aria-describedby="settings-root-help settings-root-active">
+          <p id="settings-root-help" class="settings-help">有活动 Agent 时不能更换路径。更换后请在新目录重新安装接入规则；不会移动磁盘文件。</p>
+          <p id="settings-root-active" class="settings-help settings-warning" hidden></p>
+          <div class="form-columns">
+            <div><label for="settings-page">页面域名或 IP <span class="optional">可选</span></label><input id="settings-page" maxlength="2000" placeholder="https://example.com/agents" spellcheck="false" autocomplete="off"></div>
+            <div><label for="settings-repository">代码库路径或地址 <span class="optional">可选</span></label><input id="settings-repository" maxlength="2000" placeholder="git@example.com:team/repo.git" spellcheck="false" autocomplete="off"></div>
+          </div>
+        </section>
+        <section class="settings-section" aria-labelledby="settings-sharing-title"><h3 id="settings-sharing-title">共享意向</h3>
+          <label for="settings-members">拟共享人员列表 <span id="settings-members-count" class="optional"></span></label><textarea id="settings-members" rows="3" placeholder="每行一个账号或邮箱" spellcheck="false" aria-describedby="settings-members-note"></textarea>
+          <p id="settings-members-note" class="settings-notice"><i data-lucide="info" aria-hidden="true"></i><span>当前仅保存人员名单，不授予访问权限。在线账号、邀请及移除成员功能尚未上线。</span></p>
+        </section>
+      </fieldset>
+      <p id="settings-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+      <div class="dialog-actions settings-actions"><button id="settings-delete" type="button" class="danger-button"><i data-lucide="trash-2" aria-hidden="true"></i><span>删除项目</span></button><button id="settings-reload" type="button" class="secondary-button" hidden><i data-lucide="refresh-cw" aria-hidden="true"></i><span>载入最新设置</span></button><button type="button" class="secondary-button" data-action="close-settings">取消</button><button id="settings-save" type="submit" class="primary-button"><i data-lucide="check" aria-hidden="true"></i><span>保存设置</span></button></div>
+    </form>
+  </dialog>
+  <dialog id="delete-project-dialog" class="confirm-dialog" aria-labelledby="delete-project-title" aria-describedby="delete-project-help">
+    <form id="delete-project-form">
+      <div class="dialog-heading"><h2 id="delete-project-title">删除项目</h2><button type="button" class="icon-button" data-action="close-delete-project" aria-label="关闭删除项目" title="关闭"><i data-lucide="x"></i></button></div>
+      <div class="delete-target" translate="no"><i data-lucide="folder" aria-hidden="true"></i><div><strong id="delete-project-name"></strong><span id="delete-project-root"></span></div></div>
+      <p id="delete-project-help" class="settings-help">项目将从列表移除，历史记录保留，不删除磁盘文件。有活动 Agent 时无法删除。</p>
+      <p id="delete-project-active" class="settings-help settings-warning" hidden></p>
+      <p id="delete-project-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button id="delete-project-cancel" type="button" class="secondary-button" data-action="close-delete-project">取消</button><button id="delete-project-confirm" type="submit" class="danger-button solid"><i data-lucide="trash-2" aria-hidden="true"></i><span>确认删除</span></button></div>
     </form>
   </dialog>
 
@@ -318,7 +416,89 @@
     "Invalid message.": ["メッセージが無効です。", "Invalid message.", "消息内容无效。"],
     "Invalid title.": ["タイトルが無効です。", "Invalid title.", "标题无效。"],
     "Invalid text.": ["本文が無効です。", "Invalid text.", "正文无效。"],
-    "路线图": ["ロードマップ", "Roadmap", "路线图"]
+    "路线图": ["ロードマップ", "Roadmap", "路线图"],
+    "项目操作": ["プロジェクト操作", "Project actions"],
+    "设置": ["設定", "Settings"],
+    "删除": ["削除", "Delete"],
+    "项目信息": ["プロジェクト情報", "Project information"],
+    "备注": ["メモ", "Notes"],
+    "本地路径": ["ローカルパス", "Local path"],
+    "页面域名或 IP": ["ページのドメインまたは IP", "Page domain or IP"],
+    "代码库路径或地址": ["リポジトリのパスまたは URL", "Repository path or address"],
+    "拟共享人员列表": ["共有予定のメンバー", "Planned members"],
+    "每行一个账号或邮箱": ["1行に1アカウントまたはメール", "One account or email per line"],
+    "保存设置": ["設定を保存", "Save settings"],
+    "删除项目": ["プロジェクトを削除", "Delete project"],
+    "确认删除": ["削除を確認", "Confirm delete"],
+    "设置已保存。": ["設定を保存しました。", "Settings saved."],
+    "项目已删除。": ["プロジェクトを削除しました。", "Project deleted."],
+    "有活动 Agent 时不能更换路径。更换后请在新目录重新安装接入规则；不会移动磁盘文件。": ["Agent が活動中の場合パスは変更できません。変更後は新しい場所に参加ルールを再設定してください。ファイルは移動しません。", "Finish active agent sessions before changing the path. Reinstall agent rules at the new location; files are not moved."],
+    "当前仅保存人员名单，不授予访问权限。在线账号、邀请及移除成员功能尚未上线。": ["名簿の保存のみでアクセス権限は付与されません。オンラインアカウントと招待・メンバー削除は未実装です。", "This list records intent only; it grants no access. Online accounts, invitations and member removal are not available yet."],
+    "项目将从列表移除，历史记录保留，不删除磁盘文件。有活动 Agent 时无法删除。": ["一覧から削除しますが履歴とファイルは保持します。Agent が活動中の場合は削除できません。", "Removes the project from the list, preserving history and files. Active agent sessions prevent deletion."],
+    "基本信息": ["基本情報", "Basics"], "位置与地址": ["場所とアドレス", "Location and addresses"], "共享意向": ["共有予定", "Sharing intent"],
+    "关闭项目设置": ["プロジェクト設定を閉じる", "Close project settings"], "关闭删除项目": ["削除確認を閉じる", "Close delete project"],
+    "载入最新设置": ["最新の設定を読み込む", "Load latest settings"], "项目说明、约定或注意事项": ["プロジェクトの説明・取り決め・注意事項", "Project notes, agreements or cautions"],
+    "保存中…": ["保存中…", "Saving…"], "删除中…": ["削除中…", "Deleting…"], "{n} 项": ["{n}件", "{n} listed"],
+    "放弃未保存的设置修改？": ["保存していない設定の変更を破棄しますか？", "Discard unsaved settings changes?"],
+    "放弃当前草稿并载入最新设置？": ["現在の下書きを破棄して最新の設定を読み込みますか？", "Discard your draft and load the latest settings?"],
+    "设置已被其他操作更新，草稿已保留。可载入最新设置后重新修改。": ["設定が別の操作で更新されました。下書きは保持されています。最新の設定を読み込んでから変更し直してください。", "Settings were changed elsewhere. Your draft is kept; load the latest settings, then reapply your changes."],
+    "已载入最新设置。": ["最新の設定を読み込みました。", "Latest settings loaded."], "项目已不存在或已删除。": ["プロジェクトは存在しないか削除されています。", "The project no longer exists or was deleted."],
+    "路径已更改，请为新目录重新写入接入规则。": ["パスを変更しました。新しいフォルダーに参加ルールを書き込み直してください。", "Path changed. Reinstall agent rules for the new directory."],
+    "当前有 {n} 个活动会话，保存时无法更换路径。": ["現在 {n} 件のアクティブセッションがあるため、パスは変更できません。", "{n} active session(s): the path cannot change until they finish."],
+    "当前有 {n} 个活动会话，需全部结束后才能删除。": ["現在 {n} 件のアクティブセッションがあります。すべて終了してから削除してください。", "{n} active session(s) must finish before this project can be deleted."],
+    "最多 100 位拟共享人员，每项不超过 200 个字符。": ["共有予定メンバーは100件まで、各200文字以内です。", "Up to 100 planned members, 200 characters each."],
+    "Only the owner can change project settings.": ["プロジェクト設定を変更できるのは管理者のみです。", "Only the owner can change project settings.", "只有管理员可以修改项目设置。"],
+    "Project was deleted.": ["プロジェクトは削除されています。", "Project was deleted.", "项目已被删除。"],
+    "Project settings changed. Reopen settings and retry.": ["プロジェクト設定が変更されました。開き直して再試行してください。", "Project settings changed. Reopen settings and retry.", "项目设置已被更新，请重新载入后重试。"],
+    "Active agents must finish before changing the root or deleting the project.": ["Agent が活動中のため、パスの変更や削除はできません。終了をお待ちください。", "Active agents must finish before changing the root or deleting the project.", "有活动 Agent，需等待其结束后才能更换路径或删除项目。"],
+    "Invalid page address.": ["ページのアドレスが無効です。", "Invalid page address.", "页面地址无效。"],
+    "Use an HTTP(S) page address without credentials.": ["認証情報を含まない HTTP(S) アドレスを入力してください。", "Use an HTTP(S) page address without credentials.", "请填写不含账号密码的 HTTP(S) 页面地址。"],
+    "Use up to 100 planned members.": ["共有予定メンバーは100件までです。", "Use up to 100 planned members.", "拟共享人员最多 100 位。"],
+    "Invalid planned member.": ["共有予定メンバーの値が無効です。", "Invalid planned member.", "拟共享人员条目无效。"],
+    "Invalid repository location.": ["リポジトリの場所が無効です。", "Invalid repository location.", "代码库路径或地址无效。"],
+    "项目规则": ["プロジェクトルール", "Project rules"], "平台规则": ["プラットフォームルール", "Platform rules"], "本地规则": ["ローカルルール", "Local rules"],
+    "未确认": ["未確認", "Not confirmed"], "已确认": ["確認済み", "Confirmed"], "已变更": ["変更あり", "Changed"], "只读": ["閲覧のみ", "Read-only"], "可编辑": ["編集可", "Editable"],
+    "正在载入规则…": ["ルールを読み込み中…", "Loading rules…"], "重新载入": ["再読み込み", "Reload"], "确认当前规则": ["現在のルールを確認", "Confirm current rules"],
+    "确认表示已阅读当前三级规则版本；保存修改、确认阅读与授权 Agent 是三个独立操作。": ["確認は現在の3階層ルールを読んだことを示します。保存・確認・Agent への許可はそれぞれ別の操作です。", "Confirming records that you read the current versions of all three levels. Saving, confirming and authorizing agents are separate actions."],
+    "由协作平台统一提供，适用于所有项目；在项目页只能查看。": ["連携ツールが提供し、すべてのプロジェクトに適用されます。ここでは閲覧のみです。", "Provided by the coordinator for every project; read-only here."],
+    "查看全文": ["全文を表示", "Show full text"], "本项目所有 Agent 共享的约定，保存在协调台中。": ["このプロジェクトの全 Agent が共有する取り決め。連携ツールに保存されます。", "Agreements shared by every agent in this project, stored in the coordinator."],
+    "尚未填写项目规则": ["プロジェクトルールは未入力です", "No project rules yet"],
+    "项目根目录 AGENTS.md 中的自定义部分。保存时原样保留下方的托管协调块。": ["プロジェクトの AGENTS.md の独自部分です。保存時、下の管理ブロックはそのまま保持されます。", "The custom part of AGENTS.md in the project root. Saving keeps the managed coordination block below unchanged."],
+    "AGENTS.md 中暂无自定义规则": ["AGENTS.md に独自ルールはありません", "No custom rules in AGENTS.md"], "托管协调块（只读）": ["管理ブロック（閲覧のみ）", "Managed coordination block (read-only)"],
+    "放弃修改": ["変更を破棄", "Discard changes"], "载入最新版本": ["最新版を読み込む", "Load latest version"], "保存项目规则": ["プロジェクトルールを保存", "Save project rules"], "保存本地规则": ["ローカルルールを保存", "Save local rules"],
+    "规则修改授权": ["ルール編集の許可", "Rule edit authorizations"],
+    "由本机管理员授予。只针对当前项目中工作中的会话，最长 24 小时，可随时撤销；同一 Agent 的新会话不继承授权。修改本地规则还需该 Agent 申领 AGENTS.md。在线账号与角色尚未实现。": ["この PC の管理者が付与します。このプロジェクトの作業中セッションのみ対象で、最長24時間、いつでも取り消せます。同じ Agent の新しいセッションには引き継がれません。ローカルルールの編集には AGENTS.md の担当も必要です。オンラインアカウントと権限ロールは未実装です。", "Granted by this computer's administrator. Applies only to a working session in this project, for up to 24 hours, and can be revoked at any time; new sessions of the same agent do not inherit it. Editing local rules also requires the agent to claim AGENTS.md. Online accounts and roles are not implemented yet."],
+    "授予规则修改授权": ["ルール編集を許可", "Grant rule edit access"], "工作中的 Agent": ["作業中の Agent", "Working agent"], "有效期": ["有効期間", "Duration"], "授权范围": ["許可する範囲", "Scope"],
+    "授权理由": ["許可の理由", "Reason"], "说明为什么需要此授权": ["この許可が必要な理由", "Why this access is needed"], "授予授权": ["許可する", "Grant access"], "授权记录": ["許可の履歴", "Authorizations"], "暂无授权记录": ["許可の履歴はありません", "No authorizations yet"],
+    "当前没有工作中的 Agent": ["作業中の Agent はいません", "No working agents"], "撤销": ["取り消す", "Revoke"], "有效": ["有効", "Active"], "会话已结束": ["セッション終了", "Session ended"], "已过期": ["期限切れ", "Expired"], "已撤销": ["取り消し済み", "Revoked"],
+    "版本 {v}": ["版 {v}", "Revision {v}"], "更新于 {time} · {who}": ["{time} 更新 · {who}", "Updated {time} · {who}"], "尚未保存过": ["未保存", "Never saved"],
+    "尚未确认当前规则。": ["現在のルールは未確認です。", "You have not confirmed the current rules."], "已于 {time} 确认当前规则。": ["{time} に現在のルールを確認しました。", "Current rules confirmed at {time}."],
+    "确认后规则已变更（{scopes}），请重新阅读并确认。": ["確認後にルールが変更されました（{scopes}）。読み直して確認してください。", "Rules changed after your confirmation ({scopes}). Read them again and confirm."],
+    "有未保存的修改，请先保存或放弃后再确认。": ["未保存の変更があります。保存または破棄してから確認してください。", "Save or discard unsaved changes before confirming."],
+    "有未保存的修改。": ["未保存の変更があります。", "Unsaved changes."], "服务器上已有新版本，草稿已保留。可载入最新版本后重新修改。": ["サーバーに新しい版があります。下書きは保持されています。最新版を読み込んでから変更し直してください。", "A newer version exists. Your draft is kept; load the latest version, then reapply your changes."],
+    "只读：需要管理员或获授权的工作中 Agent。": ["閲覧のみ：管理者または許可された作業中の Agent が編集できます。", "Read-only: editable by the administrator or an authorized working agent."],
+    "放弃对{scope}的未保存修改？": ["{scope}の未保存の変更を破棄しますか？", "Discard unsaved changes to {scope}?"], "规则已保存。": ["ルールを保存しました。", "Rules saved."], "已确认当前规则。": ["現在のルールを確認しました。", "Current rules confirmed."],
+    "授权已授予。": ["許可しました。", "Access granted."], "授权已撤销。": ["許可を取り消しました。", "Access revoked."], "请至少选择一个授权范围。": ["許可する範囲を1つ以上選んでください。", "Select at least one scope."],
+    "撤销 {agent} 的规则修改授权？": ["{agent} のルール編集の許可を取り消しますか？", "Revoke rule edit access for {agent}?"], "{time} 到期": ["{time} まで", "Expires {time}"], "规则暂不可用": ["ルールを取得できません", "Rules unavailable"],
+    "确认中…": ["確認中…", "Confirming…"], "授权中…": ["許可中…", "Granting…"], "规则已更新": ["ルールを更新", "Rules updated"], "规则已确认": ["ルールを確認", "Rules confirmed"], "已授予规则修改授权": ["ルール編集を許可", "Rule edit access granted"], "已撤销规则修改授权": ["ルール編集の許可を取り消し", "Rule edit access revoked"],
+    "项目设置已更新": ["プロジェクト設定を更新", "Project settings updated"], "项目已归档": ["プロジェクトを削除", "Project archived"],
+    "Rules must be text up to 64 KiB.": ["ルールは64 KiB以内のテキストにしてください。", "Rules must be text up to 64 KiB.", "规则须为不超过 64 KiB 的文本。"],
+    "Project directory changed. Reopen settings.": ["プロジェクトのフォルダーが変更されました。設定を開き直してください。", "Project directory changed. Reopen settings.", "项目目录已变更，请重新打开设置。"],
+    "Local rules must be an ordinary AGENTS.md file.": ["ローカルルールは通常の AGENTS.md ファイルである必要があります。", "Local rules must be an ordinary AGENTS.md file.", "本地规则必须是普通的 AGENTS.md 文件。"],
+    "Local rule file is too large to edit.": ["ローカルルールのファイルが大きすぎて編集できません。", "Local rule file is too large to edit.", "本地规则文件过大，无法编辑。"],
+    "Coordination block is incomplete or duplicated; repair it first.": ["管理ブロックが不完全または重複しています。先に修復してください。", "Coordination block is incomplete or duplicated; repair it first.", "托管协调块不完整或重复，请先修复。"],
+    "Choose project or local rules.": ["プロジェクトルールかローカルルールを選んでください。", "Choose project or local rules.", "请选择项目规则或本地规则。"],
+    "The managed coordination block is read-only.": ["管理ブロックは編集できません。", "The managed coordination block is read-only.", "托管协调块为只读，不能写入。"],
+    "Explicit current-project rules authorization is required.": ["このプロジェクトのルール編集には明示的な許可が必要です。", "Explicit current-project rules authorization is required.", "需要当前项目的明确规则修改授权。"],
+    "Rules changed. Reload and reconcile your draft.": ["ルールが変更されました。再読み込みして下書きを調整してください。", "Rules changed. Reload and reconcile your draft.", "规则已被更新，请重新载入并核对草稿。"],
+    "Another agent is editing local rules.": ["別の Agent がローカルルールを編集中です。", "Another agent is editing local rules.", "其他 Agent 正在编辑本地规则（已申领 AGENTS.md）。"],
+    "Only the project manager can authorize rule edits.": ["ルール編集を許可できるのは管理者のみです。", "Only the project manager can authorize rule edits.", "只有项目管理员可以授权修改规则。"],
+    "Rule authorization not found.": ["許可が見つかりません。", "Rule authorization not found.", "找不到该授权。"],
+    "Select a working agent in this project.": ["このプロジェクトの作業中の Agent を選んでください。", "Select a working agent in this project.", "请选择本项目中工作中的 Agent。"],
+    "Select project and/or local scope.": ["プロジェクトまたはローカルの範囲を選んでください。", "Select project and/or local scope.", "请选择项目和/或本地范围。"],
+    "Explicit authorization needs a reason.": ["許可には理由が必要です。", "Explicit authorization needs a reason.", "授权需要填写理由。"],
+    "Authorization expiry must be 1–1440 minutes.": ["有効期間は1～1440分にしてください。", "Authorization expiry must be 1–1440 minutes.", "有效期需为 1～1440 分钟。"],
+    "Rules changed. Reload before confirming.": ["ルールが変更されました。再読み込みしてから確認してください。", "Rules changed. Reload before confirming.", "规则已变更，请重新载入后再确认。"]
   }
   </script>
 </body>

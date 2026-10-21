@@ -117,7 +117,7 @@
   const list = value => Array.isArray(value) ? value : [];
   const active = agent => ["working", "waiting"].includes(agent.status);
   const statusNames = {working: "工作中", waiting: "等待中", completed: "已完成", idle: "已空闲", failed: "失败", cancelled: "已取消", timed_out: "已超时"};
-  const eventNames = {"project.created": "项目已创建", "agent.joined": "Agent 已加入", "agent.updated": "会话已更新", "message.sent": "消息已发送", "note.posted": "公告已发布"};
+  const eventNames = {"project.created": "项目已创建", "agent.joined": "Agent 已加入", "agent.updated": "会话已更新", "message.sent": "消息已发送", "note.posted": "公告已发布", "project.updated": "项目设置已更新", "project.deleted": "项目已归档", "rules.updated": "规则已更新", "rules.confirmed": "规则已确认", "rules.granted": "已授予规则修改授权", "rules.grantRevoked": "已撤销规则修改授权"};
   const state = {
     token: "", projects: [], projectsLoaded: false, selectedId: "", snapshots: new Map(),
     selectedSession: "", tab: "agents", busy: false, queued: false, timer: null,
@@ -263,7 +263,9 @@
           throw new ApiError("需要管理员登录", response.status, true);
         }
         const detail = typeof data?.error === "string" ? data.error : data?.error?.message || data?.message;
-        throw new ApiError(detail || message("请求失败（{status}）", {status: response.status}), response.status);
+        const failure = new ApiError(detail || message("请求失败（{status}）", {status: response.status}), response.status);
+        failure.code = typeof data?.code === "string" ? data.code : "";
+        throw failure;
       }
       if (data === null) throw new ApiError("服务器返回了无效的数据。", response.status);
       return data;
@@ -392,6 +394,7 @@
     $("create-project-button").disabled = !state.token || state.projectPending;
     $("publish-note-button").disabled = !state.token || state.notePending;
     $("confirm-cancel-button").disabled = !state.token || state.cancelPending;
+    $("project-settings-button").disabled = !state.token || !state.selectedId;
     $("policy-button").disabled = !state.token || state.policyPending.has(state.selectedId);
     $("policy-button").setAttribute("aria-busy", String(state.policyPending.has(state.selectedId)));
     $("policy-button").querySelector("span").textContent = t(state.policyPending.has(state.selectedId) ? "写入中…" : "接入规则");
@@ -422,6 +425,8 @@
     $("project-description").hidden = !project?.description;
     setText("project-settings", project ? message("租约 {lease} · 空闲 {idle}", {lease: duration(project.leaseMs), idle: duration(project.idleMs)}) : "");
     $("policy-button").hidden = !project;
+    $("project-settings-button").hidden = !project;
+    if ($("settings-dialog").open) updateSettingsState();
     const policyFeedback = state.policyFeedback.get(state.selectedId);
     $("policy-feedback").hidden = !policyFeedback;
     setText("policy-feedback", policyFeedback?.policy ? policyResultText(policyFeedback.policy, policyFeedback.created) : policyFeedback?.text || "");
@@ -586,6 +591,7 @@
     renderEvents();
     renderConnection();
     roadmapUI?.render(state.selectedId,snapshot(),state.token,language,state.tab==='roadmap');
+    renderRules();
   }
 
   function selectTab(name, focus = false) {
@@ -598,6 +604,7 @@
       if (selected && focus) button.focus();
     }
     roadmapUI?.render(state.selectedId,snapshot(),state.token,language,state.tab==='roadmap');
+    renderRules();
   }
   function feedback(id, text, type = "") {
     setText(id, text);
@@ -634,6 +641,447 @@
     feedback("project-feedback", "");
     $("project-dialog").showModal();
   }
+
+  // Project settings and archive-style deletion. Drafts survive polling; closing a changed draft asks first.
+  const settingsFields = [["name", "name"], ["description", "description"], ["root", "root"], ["page", "pageAddress"], ["repository", "repositoryPath"]];
+  const revisionConflict = "Project settings changed. Reopen settings and retry.";
+  let settingsProject = null, settingsBaseline = "", settingsPending = false, deleteTarget = null, deletePending = false, contextProject = "", contextTrigger = null;
+  const menu = $("project-context-menu");
+  const activeCount = id => list(state.snapshots.get(id)?.agents).filter(active).length;
+  async function latestProject(id) {
+    const result = await api("/api/projects");
+    if (!Array.isArray(result.projects)) throw new ApiError("项目列表格式无效。", 0);
+    state.projects = result.projects;
+    state.projectsLoaded = true;
+    render();
+    return state.projects.find(project => project.id === id) || null;
+  }
+
+  function closeProjectMenu(restore = false) {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    if (restore) contextTrigger?.focus();
+  }
+  function showProjectMenu(node, x, y) {
+    if (!state.token) return;
+    contextProject = node.dataset.projectId;
+    contextTrigger = node;
+    menu.hidden = false;
+    menu.style.left = Math.max(4, Math.min(x, innerWidth - menu.offsetWidth - 4)) + "px";
+    menu.style.top = Math.max(4, Math.min(y, innerHeight - menu.offsetHeight - 4)) + "px";
+    menu.querySelector("button").focus();
+  }
+  $("project-list").addEventListener("contextmenu", event => {
+    const node = event.target.closest("[data-project-id]");
+    if (!node || !state.token) return;
+    event.preventDefault();
+    showProjectMenu(node, event.clientX, event.clientY);
+  });
+  $("project-list").addEventListener("keydown", event => {
+    const node = event.target.closest("[data-project-id]");
+    if (!node || !(event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) return;
+    event.preventDefault();
+    const rect = node.getBoundingClientRect();
+    showProjectMenu(node, rect.left + 8, rect.bottom + 4);
+  });
+  document.addEventListener("click", event => { if (!menu.contains(event.target)) closeProjectMenu(); });
+  document.addEventListener("contextmenu", event => { if (!event.target.closest("#project-list")) closeProjectMenu(); });
+  window.addEventListener("resize", () => closeProjectMenu());
+  document.addEventListener("scroll", () => closeProjectMenu(), true);
+  menu.addEventListener("focusout", event => { if (!menu.contains(event.relatedTarget)) closeProjectMenu(); });
+  menu.addEventListener("keydown", event => {
+    const buttons = [...menu.querySelectorAll("button")], index = buttons.indexOf(document.activeElement);
+    if (event.key === "Escape") { event.preventDefault(); closeProjectMenu(true); }
+    else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
+    } else if (event.key === "Tab") closeProjectMenu();
+  });
+  menu.addEventListener("click", event => {
+    const command = event.target.closest("[data-project-command]")?.dataset.projectCommand;
+    if (!command) return;
+    // Return focus to the project first, so the dialog restores it when it closes.
+    closeProjectMenu(true);
+    if (command === "settings") openSettings(contextProject);
+    else if (command === "rules") { selectProject(contextProject); selectTab("rules"); }
+    else openDeleteProject(contextProject);
+  });
+
+  function readSettings() {
+    const values = {};
+    for (const [field, key] of settingsFields) values[key] = $("settings-" + field).value.trim();
+    values.plannedMembers = [...new Set($("settings-members").value.split(/\r?\n/).map(value => value.trim()).filter(Boolean))];
+    return values;
+  }
+  const settingsDirty = () => !!settingsProject && JSON.stringify(readSettings()) !== settingsBaseline;
+  function fillSettings(project) {
+    settingsProject = structuredClone(project);
+    for (const [field, key] of settingsFields) $("settings-" + field).value = project[key] || "";
+    $("settings-members").value = list(project.plannedMembers).join("\n");
+    settingsBaseline = JSON.stringify(readSettings());
+    setText("settings-context", project.root, true);
+    $("settings-reload").hidden = true;
+    clearValidation($("settings-form"));
+    updateSettingsState();
+  }
+  function updateSettingsState() {
+    const members = readSettings().plannedMembers.length, sessions = settingsProject ? activeCount(settingsProject.id) : 0;
+    setText("settings-members-count", members ? message("{n} 项", {n: members}) : "可选");
+    setText("settings-root-active", sessions ? message("当前有 {n} 个活动会话，保存时无法更换路径。", {n: sessions}) : "");
+    $("settings-root-active").hidden = !sessions;
+    $("settings-save").disabled = settingsPending || !state.token || !settingsDirty();
+    $("settings-delete").disabled = settingsPending || !state.token || !settingsProject;
+    $("settings-reload").disabled = settingsPending;
+  }
+  function openSettings(id) {
+    const project = state.projects.find(item => item.id === id);
+    if (!project || !state.token) return;
+    fillSettings(project);
+    feedback("settings-feedback", "");
+    $("settings-dialog").showModal();
+    $("settings-name").focus();
+  }
+  function closeSettings(force = false) {
+    if (settingsPending) return false;
+    if (!force && settingsDirty() && !confirm(t("放弃未保存的设置修改？"))) return false;
+    $("settings-dialog").close();
+    return true;
+  }
+  $("settings-dialog").addEventListener("cancel", event => {
+    if (settingsPending || (settingsDirty() && !confirm(t("放弃未保存的设置修改？")))) event.preventDefault();
+  });
+  $("settings-dialog").addEventListener("close", () => { settingsProject = null; settingsBaseline = ""; });
+  $("settings-form").addEventListener("input", updateSettingsState);
+  $("settings-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (settingsPending || !settingsProject || !state.token || !validate(event.currentTarget)) return;
+    if (!settingsDirty()) { closeSettings(true); return; }
+    const values = readSettings(), target = settingsProject;
+    if (values.plannedMembers.length > 100 || values.plannedMembers.some(member => member.length > 200)) {
+      feedback("settings-feedback", "最多 100 位拟共享人员，每项不超过 200 个字符。", "error");
+      return;
+    }
+    settingsPending = true;
+    $("settings-reload").hidden = true;
+    setPending("settings-form", "settings-fields", "settings-save", true, "保存中…", "settings-feedback");
+    updateSettingsState();
+    try {
+      const {project} = await api("/api/projects/" + encodeURIComponent(target.id), {method: "PATCH", body: {baseRevision: target.settingsRevision || 0, ...values}});
+      if (!project?.id) throw new ApiError("服务器返回了无效的数据。", 0);
+      state.projects = state.projects.map(item => item.id === project.id ? project : item);
+      if (project.root !== target.root) state.policyFeedback.set(project.id, {text: "路径已更改，请为新目录重新写入接入规则。", type: ""});
+      settingsPending = false;
+      closeSettings(true);
+      announce("设置已保存。");
+      requestSync();
+    } catch (error) {
+      const conflict = error.status === 409 && (error.code === "settings_conflict" || error.source === revisionConflict);
+      feedback("settings-feedback", conflict ? "设置已被其他操作更新，草稿已保留。可载入最新设置后重新修改。" : cleanError(error), "error");
+      $("settings-reload").hidden = !conflict;
+    } finally {
+      settingsPending = false;
+      setPending("settings-form", "settings-fields", "settings-save", false, "保存设置", "settings-feedback");
+      updateSettingsState();
+      render();
+    }
+  });
+  $("settings-reload").addEventListener("click", async () => {
+    if (settingsPending || !settingsProject) return;
+    if (settingsDirty() && !confirm(t("放弃当前草稿并载入最新设置？"))) return;
+    const id = settingsProject.id;
+    try {
+      const latest = await latestProject(id);
+      if (!latest) { feedback("settings-feedback", "项目已不存在或已删除。", "error"); return; }
+      fillSettings(latest);
+      feedback("settings-feedback", "已载入最新设置。", "success");
+      $("settings-name").focus();
+    } catch (error) { feedback("settings-feedback", cleanError(error), "error"); }
+  });
+  $("settings-delete").addEventListener("click", () => { if (!settingsPending && settingsProject) openDeleteProject(settingsProject.id); });
+
+  function fillDelete(project) {
+    deleteTarget = structuredClone(project);
+    setText("delete-project-name", project.name, true);
+    setText("delete-project-root", project.root, true);
+    const sessions = activeCount(project.id);
+    setText("delete-project-active", sessions ? message("当前有 {n} 个活动会话，需全部结束后才能删除。", {n: sessions}) : "");
+    $("delete-project-active").hidden = !sessions;
+  }
+  function openDeleteProject(id) {
+    const project = state.projects.find(item => item.id === id);
+    if (!project || !state.token) return;
+    fillDelete(project);
+    feedback("delete-project-feedback", "");
+    $("delete-project-dialog").showModal();
+    $("delete-project-cancel").focus();
+  }
+  function setDeletePending(pending) {
+    deletePending = pending;
+    $("delete-project-form").setAttribute("aria-busy", String(pending));
+    $("delete-project-confirm").disabled = pending;
+    for (const button of $("delete-project-form").querySelectorAll('[data-action^="close-"]')) button.disabled = pending;
+    const span = $("delete-project-confirm").querySelector("span");
+    uiSources.set(span, pending ? "删除中…" : "确认删除");
+    span.textContent = t(pending ? "删除中…" : "确认删除");
+    if (pending) feedback("delete-project-feedback", "正在提交…");
+  }
+  $("delete-project-dialog").addEventListener("cancel", event => { if (deletePending) event.preventDefault(); });
+  $("delete-project-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (deletePending || !deleteTarget || !state.token) return;
+    const target = deleteTarget;
+    setDeletePending(true);
+    try {
+      await api("/api/projects/" + encodeURIComponent(target.id) + "/delete", {method: "POST", body: {baseRevision: target.settingsRevision || 0}});
+      state.projects = state.projects.filter(project => project.id !== target.id);
+      setDeletePending(false);
+      $("delete-project-dialog").close();
+      if ($("settings-dialog").open) closeSettings(true);
+      if (state.selectedId === target.id) selectProject(state.projects[0]?.id || "", false);
+      for (const store of [state.snapshots, state.messageDrafts, state.noteDrafts, state.policyFeedback]) store.delete(target.id);
+      for (const scope of Object.keys(ruleScopes)) rules.drafts.delete(ruleKey(scope, target.id));
+      announce("项目已删除。");
+      render();
+      requestSync();
+    } catch (error) {
+      // Show what changed before a second confirmation; the server still checks the new revision.
+      if (error.status === 409 && (error.code === "settings_conflict" || error.source === revisionConflict)) {
+        try { const latest = await latestProject(target.id); if (latest) fillDelete(latest); } catch {}
+      }
+      feedback("delete-project-feedback", cleanError(error), "error");
+    } finally {
+      if (deletePending) setDeletePending(false);
+    }
+  });
+
+  // Project rules: read-only platform text, editable project/local text, read confirmation and owner grants.
+  // Drafts are kept per project and scope; polling never overwrites a changed draft.
+  const ruleScopes = {project: "项目规则", local: "本地规则"};
+  const rules = {project: "", data: null, inflight: new Map(), loadedAt: 0, error: "", pending: "", drafts: new Map(), agentKey: ""};
+  const ruleKey = (scope, id = rules.project) => `${id}:${scope}`;
+  const shortRevision = value => typeof value === "string" ? value.slice(0, 10) : String(value ?? "");
+  function setLabel(button, key) {
+    const span = button.querySelector("span");
+    uiSources.set(span, key);
+    span.textContent = t(key);
+  }
+  function acceptRules(data) {
+    if (!data?.platform || !data.project || !data.local || !data.permissions) throw new ApiError("服务器返回了无效的数据。", 0);
+    rules.data = data;
+    rules.error = "";
+    for (const scope of Object.keys(ruleScopes)) {
+      const draft = rules.drafts.get(ruleKey(scope));
+      if (draft?.dirty) draft.conflict = draft.base !== data[scope].revision;
+      else rules.drafts.set(ruleKey(scope), {text: data[scope].text, base: data[scope].revision, baseText: data[scope].text, dirty: false, conflict: false});
+    }
+  }
+  // One request per project (A→B→A reuses the first A request); an entry is removed only by its own promise.
+  function loadRules() {
+    const id = rules.project;
+    if (!id || !state.token) return Promise.resolve();
+    if (rules.inflight.has(id)) return rules.inflight.get(id);
+    const promise = (async () => {
+      try {
+        const result = await api(`/api/projects/${encodeURIComponent(id)}/rules`);
+        if (rules.project === id) acceptRules(result.rules);
+      } catch (error) {
+        if (rules.project === id) rules.error = cleanError(error);
+      } finally {
+        if (rules.inflight.get(id) === promise) rules.inflight.delete(id);
+        if (rules.project === id) rules.loadedAt = Date.now();
+        paintRules();
+      }
+    })();
+    rules.inflight.set(id, promise);
+    paintRules();
+    return promise;
+  }
+  function renderRules() {
+    if (rules.project !== state.selectedId) {
+      rules.project = state.selectedId;
+      rules.data = null;
+      rules.loadedAt = 0;
+      rules.error = "";
+      feedback("rules-feedback", "");
+    }
+    if (state.tab === "rules" && rules.project && state.token && !rules.inflight.has(rules.project) && Date.now() - rules.loadedAt > 15000) void loadRules();
+    paintRules();
+  }
+  function confirmationState(data) {
+    const current = {platform: data.platform.revision, project: data.project.revision, local: data.local.revision};
+    const confirmation = data.confirmation;
+    if (!confirmation) return {current, type: "pending", badge: "未确认", text: "尚未确认当前规则。"};
+    const changed = Object.keys(current).filter(scope => confirmation.revisions?.[scope] !== current[scope]);
+    if (!changed.length) return {current, type: "confirmed", badge: "已确认", text: message("已于 {time} 确认当前规则。", {time: date(confirmation.confirmedAt)})};
+    const names = changed.map(scope => t(scope === "platform" ? "平台规则" : ruleScopes[scope])).join(language === "en" ? ", " : "、");
+    return {current, type: "pending", badge: "已变更", text: message("确认后规则已变更（{scopes}），请重新阅读并确认。", {scopes: names})};
+  }
+  function paintRules() {
+    const data = rules.data, busy = !!rules.pending;
+    $("rules-content").hidden = !data;
+    $("rules-reload").disabled = !state.token || !rules.project || busy || rules.inflight.has(rules.project);
+    const dirty = Object.keys(ruleScopes).some(scope => rules.drafts.get(ruleKey(scope))?.dirty);
+    if (!data) {
+      $("rules-status-badge").className = "badge";
+      setText("rules-status-badge", rules.error ? "规则暂不可用" : "未确认");
+      setText("rules-status-text", rules.error || "正在载入规则…");
+      $("rules-confirm").disabled = true;
+      return;
+    }
+    const status = confirmationState(data);
+    $("rules-status-badge").className = `badge ${status.type}`;
+    setText("rules-status-badge", status.badge);
+    setText("rules-status-text", status.text);
+    $("rules-confirm").disabled = busy || dirty || status.type === "confirmed";
+    $("rules-confirm").title = dirty ? t("有未保存的修改，请先保存或放弃后再确认。") : "";
+    setLabel($("rules-confirm"), rules.pending === "confirm" ? "确认中…" : "确认当前规则");
+
+    setText("rules-platform-source", data.platform.source, true);
+    setText("rules-platform-revision", message("版本 {v}", {v: shortRevision(data.platform.revision)}));
+    if ($("rules-platform-text").textContent !== data.platform.text) $("rules-platform-text").textContent = data.platform.text;
+
+    for (const scope of Object.keys(ruleScopes)) {
+      const draft = rules.drafts.get(ruleKey(scope)), editable = scope === "project" ? data.permissions.editProject : data.permissions.editLocal;
+      const editor = $(`rules-${scope}-text`), access = $(`rules-${scope}-access`), stateLine = $(`rules-${scope}-state`);
+      if (editor.value !== draft.text) editor.value = draft.text;
+      editor.readOnly = !editable || busy;
+      access.className = `badge${editable ? " editable" : ""}`;
+      setText(access.id, editable ? "可编辑" : "只读");
+      stateLine.className = `rules-state${draft.conflict ? " conflict" : draft.dirty ? " dirty" : ""}`;
+      setText(stateLine.id, draft.conflict ? "服务器上已有新版本，草稿已保留。可载入最新版本后重新修改。" : draft.dirty ? "有未保存的修改。" : editable ? "" : "只读：需要管理员或获授权的工作中 Agent。");
+      $(`rules-${scope}-discard`).hidden = !draft.dirty || draft.conflict;
+      $(`rules-${scope}-latest`).hidden = !draft.conflict;
+      for (const id of [`rules-${scope}-discard`, `rules-${scope}-latest`]) $(id).disabled = busy;
+      $(`rules-${scope}-save`).disabled = busy || !editable || !draft.dirty;
+      setLabel($(`rules-${scope}-save`), rules.pending === scope ? "保存中…" : scope === "project" ? "保存项目规则" : "保存本地规则");
+    }
+    setText("rules-project-revision", message("版本 {v}", {v: data.project.revision}));
+    setText("rules-project-updated", data.project.updatedAt ? message("更新于 {time} · {who}", {time: date(data.project.updatedAt), who: data.project.updatedBy || ""}) : "尚未保存过");
+    setText("rules-local-source", data.local.source, true);
+    setText("rules-local-revision", message("版本 {v}", {v: shortRevision(data.local.revision)}));
+    if ($("rules-local-managed").textContent !== data.local.managedText) $("rules-local-managed").textContent = data.local.managedText || "";
+    $("rules-local-managed").closest("details").hidden = !data.local.managedText;
+    paintGrants(data, busy);
+  }
+  function paintGrants(data, busy) {
+    $("rules-grants").hidden = !data.permissions.manageGrants;
+    if (!data.permissions.manageGrants) return;
+    const select = $("rules-grant-agent"), agents = [...new Set(list(snapshot()?.agents).filter(agent => agent.status === "working").map(agent => agent.agentId))].sort();
+    const key = agents.join("|") + language;
+    if (rules.agentKey !== key) {
+      const previous = select.value;
+      select.replaceChildren(...(agents.length ? agents.map(agentId => new Option(agentId, agentId)) : [new Option(t("当前没有工作中的 Agent"), "")]));
+      if (agents.includes(previous)) select.value = previous;
+      rules.agentKey = key;
+    }
+    $("rules-grant-fields").disabled = busy;
+    $("rules-grant-submit").disabled = busy || !agents.length;
+    setLabel($("rules-grant-submit"), rules.pending === "grant" ? "授权中…" : "授予授权");
+    const now = Date.now(), current = snapshot(), sessions = new Map(list(current?.agents).map(agent => [agent.id, agent.status]));
+    const grants = [...list(data.grants)].sort((a, b) => (stamp(b.expiresAt) ?? 0) - (stamp(a.expiresAt) ?? 0));
+    reconcile($("rules-grant-list"), grants, () => element("li", "rules-grant"), (node, grant) => {
+      // The server only honours grants for a session that is still working.
+      const status = grant.revokedAt ? "已撤销" : (stamp(grant.expiresAt) ?? 0) <= now ? "已过期" : current && sessions.get(grant.sessionId) !== "working" ? "会话已结束" : "有效";
+      node.className = `rules-grant${status === "有效" ? "" : " inactive"}`;
+      const scopes = list(grant.scopes).map(scope => `<span class="badge">${escape(t(ruleScopes[scope] || scope))}</span>`).join("");
+      markup(node, `<div class="rules-grant-head"><strong>${escape(grant.agentId)}</strong>${scopes}<span class="badge${status === "有效" ? " active" : ""}">${escape(t(status))}</span></div>${status === "有效" ? `<button type="button" class="secondary-button compact" data-rules-revoke="${escape(grant.id)}" data-agent="${escape(grant.agentId)}"${busy ? " disabled" : ""}><span>${escape(t("撤销"))}</span></button>` : "<span></span>"}<p>${escape(grant.reason)}</p><time>${escape(t("{time} 到期", {time: date(grant.expiresAt)}))}</time>`);
+    });
+    $("rules-grant-empty").hidden = grants.length > 0;
+  }
+  // Disabled or hidden buttons drop focus to <body>; move it to the control the user will need next.
+  function keepRulesFocus(kind) {
+    if (document.activeElement && document.activeElement !== document.body) return;
+    $(Object.hasOwn(ruleScopes, kind) ? `rules-${kind}-text` : kind === "confirm" ? "rules-reload" : "rules-grant-reason")?.focus();
+  }
+  async function rulesRequest(kind, path, body, success) {
+    const id = rules.project;
+    if (!id || !state.token || rules.pending) return false;
+    const target = ["grant", "revoke"].includes(kind) ? "rules-grant-feedback" : "rules-feedback";
+    rules.pending = kind;
+    feedback(target, "正在提交…");
+    paintRules();
+    try {
+      const result = await api(`/api/projects/${encodeURIComponent(id)}/rules${path}`, {method: path ? "POST" : "PATCH", body});
+      // The save succeeded for the original project even if the owner has switched away since.
+      if (Object.hasOwn(ruleScopes, kind)) rules.drafts.delete(ruleKey(kind, id));
+      if (rules.project !== id) return true;
+      acceptRules(result.rules);
+      feedback(target, success, "success");
+      announce(success);
+      requestSync();
+      return true;
+    } catch (error) {
+      if (rules.project !== id) return false;
+      const draft = rules.drafts.get(ruleKey(kind, id));
+      if (error.status === 409 && error.code === "rules_conflict") {
+        if (draft) draft.conflict = true;
+        rules.loadedAt = 0;
+      }
+      feedback(target, cleanError(error), "error");
+      return false;
+    } finally {
+      rules.pending = "";
+      paintRules();
+      if (rules.project === id) keepRulesFocus(kind);
+      if (rules.loadedAt === 0 && rules.project === id) void loadRules();
+    }
+  }
+  function discardRuleDraft(scope, ask = true) {
+    const draft = rules.drafts.get(ruleKey(scope)), data = rules.data?.[scope];
+    if (!draft || !data) return;
+    if (ask && draft.dirty && !confirm(t("放弃对{scope}的未保存修改？", {scope: t(ruleScopes[scope])}))) return;
+    rules.drafts.set(ruleKey(scope), {text: data.text, base: data.revision, baseText: data.text, dirty: false, conflict: false});
+    paintRules();
+    keepRulesFocus(scope);
+  }
+  for (const scope of Object.keys(ruleScopes)) {
+    $(`rules-${scope}-text`).addEventListener("input", event => {
+      const draft = rules.drafts.get(ruleKey(scope));
+      if (!draft || event.target.readOnly) return;
+      draft.text = event.target.value;
+      draft.dirty = draft.text !== draft.baseText;
+      if (!draft.dirty) draft.conflict = false;
+      paintRules();
+    });
+    $(`rules-${scope}-save`).addEventListener("click", () => {
+      const draft = rules.drafts.get(ruleKey(scope));
+      if (draft?.dirty) void rulesRequest(scope, "", {scope, baseRevision: draft.base, text: draft.text}, "规则已保存。");
+    });
+    $(`rules-${scope}-discard`).addEventListener("click", () => discardRuleDraft(scope));
+    $(`rules-${scope}-latest`).addEventListener("click", async () => {
+      if (!confirm(t("放弃对{scope}的未保存修改？", {scope: t(ruleScopes[scope])}))) return;
+      const id = rules.project;
+      rules.loadedAt = 0;
+      await loadRules();
+      // The owner may have switched projects while the reload was in flight.
+      if (rules.project !== id) return;
+      discardRuleDraft(scope, false);
+      $(`rules-${scope}-text`).focus();
+    });
+  }
+  $("rules-reload").addEventListener("click", () => { rules.loadedAt = 0; feedback("rules-feedback", ""); void loadRules(); });
+  $("rules-confirm").addEventListener("click", () => {
+    if (rules.data) void rulesRequest("confirm", "/confirm", {revisions: confirmationState(rules.data).current}, "已确认当前规则。");
+  });
+  $("rules-grant-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (rules.pending || !validate(form)) return;
+    const scopes = [...form.querySelectorAll('input[name="scope"]:checked')].map(input => input.value);
+    if (!scopes.length) { feedback("rules-grant-feedback", "请至少选择一个授权范围。", "error"); return; }
+    const body = {agentId: $("rules-grant-agent").value, scopes, reason: $("rules-grant-reason").value.trim(), expiresInMinutes: Number($("rules-grant-minutes").value)};
+    if (await rulesRequest("grant", "/grants", body, "授权已授予。")) {
+      $("rules-grant-reason").value = "";
+      for (const input of form.querySelectorAll('input[name="scope"]')) input.checked = false;
+    }
+  });
+  $("rules-grant-list").addEventListener("click", event => {
+    const button = event.target.closest("[data-rules-revoke]");
+    if (!button || button.disabled) return;
+    if (!confirm(t("撤销 {agent} 的规则修改授权？", {agent: button.dataset.agent}))) return;
+    void rulesRequest("revoke", "/grants", {grantId: button.dataset.rulesRevoke, revoke: true}, "授权已撤销。");
+  });
+
   function openNote() {
     if (!state.selectedId || !snapshot()) return;
     state.noteProjectId = state.selectedId;
@@ -797,6 +1245,9 @@
     switch (button.dataset.action) {
       case "refresh": requestSync(); break;
       case "install-policy": void installPolicy(); break;
+      case "edit-project": openSettings(state.selectedId); break;
+      case "close-settings": closeSettings(); break;
+      case "close-delete-project": closeDialog("delete-project-dialog", deletePending); break;
       case "open-project": openProject(); break;
       case "close-project": closeDialog("project-dialog", state.projectPending); break;
       case "open-note": openNote(); break;

@@ -4,7 +4,8 @@
 
 The human user creates projects in the coordinator UI. Agents do not create
 projects, request owner credentials, call owner bootstrap/admin routes, or
-install policies themselves. An owner-selected policy installation preserves
+install policies themselves. Explicitly authorized project/local rule editing is
+separate from owner-only policy installation. An owner-selected installation preserves
 existing project rules and adds the managed coordination block to `AGENTS.md`;
 `.agent-coordinator.json` supplies project ID, base URL and CLI path. Honor both
 the existing rules and this protocol. The CLI currently requires explicit flags
@@ -20,6 +21,68 @@ identities and leases; it cannot intercept or prohibit every filesystem write.
 Never describe a reservation as an OS lock or claim that an unregistered tool
 cannot edit files. A working session is permission under this protocol only for
 its current write claims, not for every file in the project.
+
+## Three Rule Levels and Editing Authority
+
+1. **Platform rules** are this protocol and enforced service boundaries. The project
+   Rules page shows them read-only. Project/local changes cannot expand credentials,
+   bypass server authorization, or grant access to other projects. Platform-wide
+   policy changes use a separate platform-maintainer task.
+2. **Project rules** are shared, versioned instructions stored with the project.
+   The project's owner or authorized administrator may review and edit them, or
+   explicitly authorize an agent to edit named scopes in this project.
+3. **Local rules** are the custom part of the current machine/root's `AGENTS.md`.
+   They supplement project rules for that checkout. The generated coordination
+   block remains managed separately; the Rules editor preserves it.
+
+Read all applicable levels before work. Platform requirements take precedence;
+project rules take precedence over conflicting local defaults. Follow explicit
+human instructions within that human's authority and approved project scope.
+Resolve unresolved contradictions before affected writes. A project administrator
+may change project/local requirements, but cannot use that change to enlarge their
+platform or filesystem authority.
+
+Current local mode uses the authenticated local owner as project manager. Online
+accounts and per-project administrator roles are planned; a planned member list
+is not proof of membership or authority. The Rules page exposes source, revision,
+editing capability and an explicit read confirmation. A changed revision requires
+reconfirmation; confirmation is distinct from saving.
+
+An explicit human request in the current agent conversation permits scoped edits
+of project-local rule files under normal write claims. For rule changes through
+the API, the manager creates an explicit grant for an existing working session,
+selects project/local scopes, supplies a reason and expiry, and may revoke it.
+Grants are project/session bound and do not carry into a replacement session.
+Agents use their own session credentials. A local-file edit additionally requires
+an active `AGENTS.md` claim. Editing rules is itself a task: preserve unrelated
+content, reconcile revisions, record the reason and verify the result.
+
+## Coordinator Closeout and Waiting
+
+For a coordinated development round, the user-designated coordinator remains
+online, checks messages and follows execution until every assigned agent reports
+its result. Workers finish implementation, publish a concise report (changes,
+validation, risks, next steps), release file claims with `update --files '[]'`,
+and stay in read-only coordination standby until the coordinator sends the end
+notification. Standby is real coordination activity; continue heartbeat/inbox
+checks and periodically report actual message/coordination checks.
+
+The coordinator checks reports and remaining tasks, sends the end notification to
+workers with no remaining assignment, and verifies their sessions have closed.
+Workers acknowledge the notification and call `done` or leave as `idle` without
+another confirmation round. This is completion of the existing authorized task,
+not acceptance of a new task. The coordinator's closeout notification ends a
+no-message waiting timer early. A later explicit human instruction to continue a
+specific task still takes precedence; report that conflict to the coordinator.
+
+After all other execution/standby sessions close and claims are released, the
+coordinator posts the combined result and exits last, then reports to the user.
+A crashed, timed-out or unreachable agent is reported as such, never counted as
+successful completion. If no coordinator was designated, agents use the normal
+completion/idle workflow below. A direct human cancellation or stop request takes
+precedence over waiting. Automated `run` wrappers may close on child completion;
+a designated runtime must maintain a separate read-only coordination session if
+it still owes a closeout wait. Never fake implementation progress to stay online.
 
 ## Before Work
 
@@ -99,13 +162,13 @@ or read owner credentials to recover an agent SID.
 
 ## Lease Loss, Idle and Completion
 
-On an error verifying your lease, HTTP 409 for a closed/expired session, loss of
+On unconfirmed lease expiry, HTTP 409 for a closed/expired session, loss of
 current claims, or any status outside `working`/`waiting`, **stop writing
 immediately**. Do not continue offline on the assumption that nobody else is
 editing. Re-register, reacquire claims and re-check the project state before
 resuming. A stored token is not a lease. Server restart can close old sessions.
 
-If no work is happening, leave as `idle` rather than running a heartbeat forever.
+Outside a designated coordination/closeout wait, leave as `idle` when no work is happening.
 An explicit heartbeat with `{ "state": "idle" }` closes even an empty-file
 read-only session. Complete with `done --session ID --summary TEXT`; the optional
 summary becomes a durable handoff note. Use `leave --reason failed` or
@@ -116,7 +179,7 @@ run performs deduplicated idle cleanup.
 automates registration, waiting, lease/claim verification, event listening and
 cleanup. It reports child liveness every 60 seconds by default, earlier for short
 idle policies. This is not proof of useful work or permission for undeclared
-writes. Heartbeat/event failure stops its child before voluntary claim release;
+writes. Unconfirmed lease loss or a non-transient heartbeat/event failure stops its child before voluntary claim release;
 ordinary child success/failure closes the session automatically. While waiting,
 automatic retries do not prevent idle expiry and no child progress is reported.
 The wrapper manages and terminates **only its direct child**, not a Windows
@@ -226,3 +289,48 @@ node $cli heartbeat --session $session
 node $cli inbox --session $session --ack '<message-id-read-and-handled>'
 node $cli done --session $session --summary 'Endpoint and tests complete; ready for review.'
 ```
+
+### Roadmap theme authoring standard
+
+Roadmaps MUST support both platform themes. The shell passes its resolved theme
+(`light` or `dark`) to `/roadmap/render?theme=...`; manual selection overrides the
+OS, and system mode follows OS changes. Switching themes reloads only the preview,
+not the saved document or editor draft. Reload and reopening use the current theme.
+Direct render requests without a valid theme use light. Keep the existing theme
+API (`AgentCoordinatorTheme.resolved`, `agent-coordinator-themechange`) when
+redesigning the shell. Do not enable scripts or same-origin access in the iframe.
+
+Use these renderer-provided CSS variables rather than fixed light colors:
+`--roadmap-bg`, `--roadmap-surface`, `--roadmap-text`, `--roadmap-muted`,
+`--roadmap-border`, `--roadmap-link`, `--roadmap-success`, `--roadmap-warning`,
+`--roadmap-danger`, `--roadmap-info`. These are platform-owned; do not redefine them.
+Pair surfaces with text, and use explicit labels as well as status colors.
+Do not use OS media queries as a replacement for the platform theme selection.
+
+Starter HTML (also valid as a fragment):
+
+```html
+<style>
+body { font: 16px/1.6 system-ui; margin: 0; padding: 24px; }
+.card { background: var(--roadmap-surface); color: var(--roadmap-text);
+        border: 1px solid var(--roadmap-border); padding: 16px; border-radius: 12px; }
+.detail { color: var(--roadmap-muted); }
+a { color: var(--roadmap-link); }
+</style>
+<section class="card">
+  <h1>Project roadmap</h1>
+  <p class="detail">Next review: specify a date</p>
+  <table><tr><th>Milestone</th><th>Status</th></tr>
+    <tr><td>Initial release</td><td data-status="info">In progress</td></tr></table>
+</section>
+```
+
+The render-only stylesheet normalizes the document/body background and text and
+provides low-specificity defaults for tables, borders, links and statuses. Saved
+HTML/history are unchanged. Existing hardcoded descendant colors, inline styles,
+gradients, SVG fills and images are not recolored: migrate those to variables and
+check both themes. This is intentionally limited compatibility, not a CSS sanitizer
+or an inversion filter. Malformed HTML (for example an unclosed style/comment) may
+swallow the appended stylesheet; publish valid HTML. Theme changes reload the
+sandboxed frame, so its internal scroll position may reset. CSP and sandbox remain
+unchanged; no script, external stylesheet or parent access is needed.

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   ApiError, CoordinatorClient, CredentialStore, SessionClient, registerSession,
-  startWatching, runSession, publicResult, normalizeBaseUrl,
+  startWatching, runSession, publicResult, normalizeBaseUrl, TransportError, isTransientError,
 } from '../lib/client.mjs';
 import { installShutdownSignals, main, parseArgs } from '../cli.mjs';
 import { Coordinator } from '../lib/coordinator.mjs';
@@ -101,7 +101,7 @@ function fixture({ status = 'working', files = ['a.txt'], idleMs = 300_000, with
       return response(envelope());
     }
     if (path.endsWith('/events')) {
-      if (state.eventError) return response({ error: 'events unavailable' }, 503);
+      if (state.eventError) return response({ error: 'events unavailable' }, state.eventError === true ? 503 : state.eventError);
       if (events.length) return response({ ...envelope(), cursor: ++cursor, events: events.splice(0) });
       return new Promise((resolve, reject) => {
         const poll = { deliver: values => {
@@ -425,12 +425,12 @@ test('lost files or closed session from events immediately stops run work', asyn
   }
 });
 
-test('event transport failure and initial stale heartbeat both fail closed', async () => {
+test('non-transient event failure and initial stale heartbeat both fail closed', async () => {
   const f = fixture();
-  f.state.eventError = true;
+  f.state.eventError = 400;
   const child = childMock();
   const result = await runSession(f.handle, 'editor', [], { clock: f.clock, spawnImpl: () => child });
-  assert.equal(result.error.status, 503);
+  assert.equal(result.error.status, 400);
   assert.deepEqual(child.kills, ['SIGTERM']);
   const initial = fixture();
   initial.state.heartbeatError = true;
@@ -1289,7 +1289,7 @@ test('one-shot progress/heartbeat with old running server output unread fallback
   assert.equal(heartbeat.inbox.checkFailed, true);
   assert.equal(heartbeat.inbox.unreadCount, null);
   assert.equal(heartbeat.inbox.requiresCheck, true);
-  assert.equal(heartbeat.inbox.error, 'Connection failed');
+  assert.equal(heartbeat.inbox.error, 'GET /api/sessions/s-1/inbox failed: Connection failed');
   assert.equal(stderr.text, '');
   assert.equal(f.calls.some(call => call.path.endsWith('/ack') || call.path.endsWith('/leave')), false);
 });
@@ -1327,4 +1327,196 @@ test('a delayed legacy inbox fallback cannot reopen a session already reported c
   assert.equal(handle.session.status, 'timed_out');
   assert.deepEqual(handle.session.claimedFiles, []);
   assert.equal(handle.cursor, 1);
+});
+
+function timeoutError() {
+  return new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+}
+
+function refusedError() {
+  return new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8793'), { code: 'ECONNREFUSED' }) });
+}
+
+test('client timeouts and network failures are transient transport errors; HTTP 409 and caller cancellation are not', async () => {
+  const hanging = new CoordinatorClient({ timeoutMs: 20, fetchImpl: (_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+  }) });
+  await assert.rejects(hanging.projects(), error => error instanceof TransportError && error.timedOut
+    && isTransientError(error) && error.message === 'GET /api/projects timed out after 20 ms');
+  const controller = new AbortController();
+  const cancelled = hanging.projects({ signal: controller.signal, timeoutMs: 60_000 });
+  controller.abort();
+  await assert.rejects(cancelled, error => error.name === 'AbortError' && !(error instanceof TransportError) && !isTransientError(error));
+  const refused = new CoordinatorClient({ fetchImpl: async () => { throw refusedError(); } });
+  await assert.rejects(refused.projects(), error => isTransientError(error) && !error.timedOut
+    && error.message === 'GET /api/projects failed: fetch failed (ECONNREFUSED)');
+  for (const [status, transient] of [[503, true], [500, true], [429, true], [409, false], [401, false], [400, false]]) {
+    const client = new CoordinatorClient({ fetchImpl: async () => new Response(JSON.stringify({ error: 'x' }), { status }) });
+    await assert.rejects(client.projects(), error => error instanceof ApiError && isTransientError(error) === transient);
+  }
+  assert.equal(isTransientError(new Error('Current working write claim was lost; stopping child')), false);
+  assert.equal(isTransientError(refusedError()), false, 'raw errors are classified only after the transport wraps them');
+});
+
+test('long-poll and watch heartbeat timeouts leave headroom beyond the server wait and normal latency', async () => {
+  const f = fixture(), timeouts = [];
+  const request = f.client.request.bind(f.client);
+  f.client.request = (method, path, body, options) => {
+    timeouts.push([path.split('?')[0].split('/').at(-1), options?.timeoutMs]);
+    return request(method, path, body, options);
+  };
+  f.deliver([{ id: 1, type: 'note.posted', projectId: 'p1', at: 'now', data: {} }]);
+  await f.handle.events();
+  assert.deepEqual(timeouts.at(-1), ['events', 55_000]);
+  const watcher = startWatching(f.handle, { clock: f.clock });
+  await watcher.ready;
+  assert.deepEqual(timeouts.find(([action]) => action === 'heartbeat'), ['heartbeat', 15_000]);
+  await watcher.stop('cancelled');
+});
+
+test('a single timed-out watch heartbeat is retried and does not close the session or stop run work', async () => {
+  const f = fixture(), child = childMock(), seen = [];
+  let heartbeats = 0;
+  f.state.heartbeatHook = async () => { if (++heartbeats === 3) throw timeoutError(); };
+  const running = runSession(f.handle, 'editor', [], { clock: f.clock, spawnImpl: () => child, onEvent: event => seen.push(event) });
+  await flush();
+  assert.equal(heartbeats, 2);
+  await f.clock.tick(10_000);
+  assert.equal(heartbeats, 3);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].type, 'connection.retrying');
+  assert.equal(seen[0].synthetic, true);
+  assert.deepEqual(seen[0].data, {
+    sessionId: 's-1', agentId: 'agent-real', channel: 'heartbeat', failures: 1,
+    error: 'POST /api/sessions/s-1/heartbeat failed: The operation was aborted due to timeout', retryInMs: 1_000,
+    leaseVerified: true, leaseExpiresAt: '1970-01-01T00:00:45.000Z', leaseRemainingMs: 35_000,
+  });
+  assert.deepEqual(child.kills, []);
+  await f.clock.tick(1_000);
+  assert.equal(heartbeats, 4);
+  assert.equal(seen[1].type, 'connection.recovered');
+  assert.equal(seen[1].data.failures, 1);
+  assert.equal(seen[1].data.leaseExpiresAt, '1970-01-01T00:00:56.000Z');
+  await f.clock.tick(120_000);
+  assert.equal(seen.length, 2);
+  assert.equal(f.session.status, 'working');
+  assert.equal(f.session.leaseUpdatedAt, 131_000);
+  assert.deepEqual(child.kills, []);
+  assert.equal(f.calls.some(call => call.path.endsWith('/leave')), false);
+  child.finish(0);
+  const result = await running;
+  assert.equal(result.error, undefined);
+  assert.equal(result.reason, 'completed');
+  assert.equal(result.exitCode, 0);
+  assert.equal(f.clock.jobs.size, 0);
+});
+
+test('sustained heartbeat failure stops run work and releases claims only once the confirmed lease has expired', async () => {
+  const f = fixture(), child = childMock(), seen = [];
+  let heartbeats = 0;
+  f.state.heartbeatHook = async () => { if (++heartbeats >= 3) throw heartbeats % 2 ? timeoutError() : refusedError(); };
+  const running = runSession(f.handle, 'editor', [], { clock: f.clock, spawnImpl: () => child, onEvent: event => seen.push(event) });
+  await flush();
+  await f.clock.tick(44_999);
+  assert.deepEqual(child.kills, []);
+  assert.equal(f.calls.some(call => call.path.endsWith('/leave')), false);
+  assert.equal(f.handle.session.status, 'working');
+  assert.deepEqual(seen.map(event => event.data.retryInMs), [1_000, 2_000, 4_000, 8_000, 15_000, 15_000]);
+  assert.ok(seen.every(event => event.type === 'connection.retrying' && event.data.channel === 'heartbeat'));
+  assert.deepEqual(seen.map(event => event.data.leaseRemainingMs), [35_000, 34_000, 32_000, 28_000, 20_000, 5_000]);
+  await f.clock.tick(1);
+  const result = await running;
+  assert.equal(result.reason, 'failed');
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.error.code, 'LEASE_UNCONFIRMED');
+  assert.match(result.error.message, /expired at 1970-01-01T00:00:45\.000Z \(last error: POST \/api\/sessions\/s-1\/heartbeat failed: fetch failed \(ECONNREFUSED\)\)\. Stop writing/);
+  assert.deepEqual(child.kills, ['SIGTERM']);
+  assert.equal(f.calls.filter(call => call.path.endsWith('/leave')).length, 1);
+  assert.equal(f.calls.at(-1).body.reason, 'failed');
+  assert.equal(f.session.status, 'closed');
+  assert.equal(f.pending.size, 0);
+  assert.equal(f.clock.jobs.size, 0);
+});
+
+test('transient event failures are retried while heartbeats keep the lease, then the long poll resumes', async () => {
+  const f = fixture(), child = childMock(), seen = [];
+  f.state.eventError = 503;
+  const running = runSession(f.handle, 'editor', [], { clock: f.clock, spawnImpl: () => child, onEvent: event => seen.push(event) });
+  await flush();
+  await f.clock.tick(60_000);
+  assert.deepEqual(child.kills, []);
+  assert.equal(f.calls.some(call => call.path.endsWith('/leave')), false);
+  assert.equal(f.session.leaseUpdatedAt, 60_000);
+  const retries = seen.filter(event => event.type === 'connection.retrying');
+  assert.deepEqual(retries.map(event => event.data.retryInMs), [1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000]);
+  assert.ok(retries.every(event => event.data.channel === 'events' && /HTTP 503/.test(event.data.error)));
+  f.state.eventError = false;
+  await f.clock.tick(15_000);
+  assert.equal(f.pending.size, 1);
+  f.deliver([{ id: 1, type: 'note.posted', projectId: 'p1', at: 'now', data: {} }]);
+  await flush();
+  assert.deepEqual(seen.slice(-2).map(event => event.type), ['connection.recovered', 'note.posted']);
+  assert.equal(seen.at(-2).data.failures, 8);
+  child.finish(0);
+  const result = await running;
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.error, undefined);
+});
+
+test('initial lease verification retries transient failures before ready and fails closed after one lease period', async () => {
+  const f = fixture(), seen = [];
+  let heartbeats = 0, ready = false;
+  f.state.heartbeatHook = async () => { if (++heartbeats === 1) throw refusedError(); };
+  const watcher = startWatching(f.handle, { clock: f.clock, onEvent: event => seen.push(event) });
+  watcher.ready.then(() => { ready = true; });
+  await flush();
+  assert.equal(ready, false);
+  assert.equal(seen[0].type, 'connection.retrying');
+  assert.equal(seen[0].data.leaseVerified, false);
+  assert.match(seen[0].data.error, /fetch failed \(ECONNREFUSED\)/);
+  await f.clock.tick(1_000);
+  assert.equal(ready, true);
+  assert.equal(seen[1].type, 'connection.recovered');
+  assert.equal(seen[1].data.leaseVerified, true);
+  await watcher.stop('cancelled');
+  assert.equal(f.calls.at(-1).body.reason, 'cancelled');
+
+  const never = fixture();
+  never.state.heartbeatHook = async () => { throw timeoutError(); };
+  const failing = startWatching(never.handle, { clock: never.clock });
+  const rejected = assert.rejects(failing.ready, error => error.code === 'LEASE_UNCONFIRMED');
+  await never.clock.tick(45_000);
+  await rejected;
+  const result = await failing.done;
+  assert.equal(result.reason, 'failed');
+  assert.equal(never.calls.at(-1).body.reason, 'failed');
+  assert.equal(never.clock.jobs.size, 0);
+});
+
+test('CLI join --watch reports retries on stdout and stderr, survives one timeout and fails closed after lease expiry', async () => {
+  const f = fixture(), processLike = new EventEmitter(), stdout = capture(), stderr = capture();
+  let heartbeats = 0;
+  f.state.heartbeatHook = async () => { if (++heartbeats === 2) throw timeoutError(); };
+  const watching = main(['join', '--project', 'p1', '--agent', 'real', '--task', 'busy machine', '--file', 'a.txt', '--watch'], {
+    processLike, stdout, stderr, store: f.store, fetchImpl: f.fetchImpl, clock: f.clock,
+  });
+  await flush();
+  await f.clock.tick(10_000);
+  assert.match(stdout.text, /"type": "connection\.retrying"/);
+  assert.equal(stderr.text, 'Coordinator heartbeat request failed (attempt 1): POST /api/sessions/s-1/heartbeat failed: '
+    + 'The operation was aborted due to timeout. Retrying in 1s; last confirmed lease expires in 35s; '
+    + 'claims are released if it cannot be renewed by then.\n');
+  await f.clock.tick(1_000);
+  assert.match(stderr.text, /heartbeat request recovered after 1 failed attempt\(s\)/);
+  assert.equal(f.session.status, 'working');
+  f.state.heartbeatHook = async () => { throw timeoutError(); };
+  await f.clock.tick(44_999);
+  assert.equal(f.session.status, 'working');
+  await f.clock.tick(1);
+  assert.equal(await watching, 1);
+  assert.match(stderr.text, /Lease could not be renewed before it expired at 1970-01-01T00:00:56\.000Z/);
+  assert.equal(f.session.reason, 'failed');
+  assert.equal(`${stdout.text}${stderr.text}`.includes('secret-token'), false);
+  assert.equal(processLike.listenerCount('SIGINT'), 0);
+  assert.equal(f.pending.size, 0);
 });
